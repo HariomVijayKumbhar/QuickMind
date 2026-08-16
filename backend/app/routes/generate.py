@@ -1,19 +1,12 @@
 from typing import Optional
-from fastapi import APIRouter, Form
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Request, Form
 from app.services.ai_service import ai_service
 
 router = APIRouter(prefix="/api", tags=["Content Generation"])
 
-class GenerateRequest(BaseModel):
-    type: str = Field("Email", alias="content_type", description="Content type (Email, LinkedIn post, Report, Message)")
-    topic: str = Field(..., description="Main topic or instruction")
-    tone: str = Field("Professional", description="Desired tone (Professional, Casual, Persuasive, Concise)")
-    key_points: Optional[str] = Field(None, description="Optional key points to include")
-
 @router.post("/generate")
 async def generate_endpoint(
-    request_data: Optional[GenerateRequest] = None,
+    request: Request,
     content_type: Optional[str] = Form("Email"),
     topic: Optional[str] = Form(None),
     tone: Optional[str] = Form("Professional"),
@@ -25,17 +18,27 @@ async def generate_endpoint(
         c_tone = "Professional"
         c_points = None
 
-        if topic and topic.strip():
+        req_content_type = request.headers.get("content-type", "")
+
+        # 1. Handle JSON request body
+        if "application/json" in req_content_type:
+            try:
+                body = await request.json()
+                c_topic = body.get("topic", "")
+                c_type = body.get("content_type", body.get("type", "Email"))
+                c_tone = body.get("tone", "Professional")
+                c_points = body.get("key_points", None)
+            except Exception:
+                pass
+
+        # 2. Handle Form data fallback
+        if not c_topic and topic and topic.strip():
             c_topic = topic.strip()
             c_type = content_type or "Email"
             c_tone = tone or "Professional"
             c_points = key_points
-        elif request_data and request_data.topic and request_data.topic.strip():
-            c_topic = request_data.topic.strip()
-            c_type = request_data.type or "Email"
-            c_tone = request_data.tone or "Professional"
-            c_points = request_data.key_points
-        else:
+
+        if not c_topic or not c_topic.strip():
             return {
                 "success": False,
                 "error": "Please provide a topic or prompt for content generation."
