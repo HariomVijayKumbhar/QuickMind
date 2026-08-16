@@ -97,6 +97,37 @@ QuickMind/
 - Python 3.10+ installed
 - Google Gemini API Key (Get a free key from [Google AI Studio](https://aistudio.google.com/))
 
+#### Optional: OCR Support for Scanned PDFs & Images (Phase 2 Stretch Goal)
+To enable text extraction from scanned PDFs (`.pdf` without a text layer) and image files (`.jpg`, `.jpeg`, `.png`), install the following **system-level binaries** in addition to the Python packages:
+
+**Tesseract OCR** (required by `pytesseract`):
+```bash
+# Linux (Debian/Ubuntu)
+sudo apt-get install tesseract-ocr
+
+# macOS
+brew install tesseract
+
+# Windows
+# Download installer from: https://github.com/UB-Mannheim/tesseract/wiki
+# Then add Tesseract to your system PATH.
+```
+
+**Poppler** (required by `pdf2image` to render scanned PDFs):
+```bash
+# Linux (Debian/Ubuntu)
+sudo apt-get install poppler-utils
+
+# macOS
+brew install poppler
+
+# Windows
+# Download from: https://github.com/oschwartz10612/poppler-windows/releases
+# Extract and add the `Library/bin` folder to your system PATH.
+```
+
+> **Note**: If Tesseract or Poppler is not installed, QuickMind will start normally and will log a warning. All standard text documents (`.txt`, `.docx`, text-based `.pdf`) continue to work without these system binaries. OCR is only invoked for image files or scanned PDFs with no embedded text.
+
 ### 1. Clone the Repository
 ```bash
 git clone https://github.com/your-username/QuickMind.git

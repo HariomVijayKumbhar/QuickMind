@@ -38,15 +38,28 @@ def run_tests():
         from app.main import app
         from fastapi.testclient import TestClient
 
-        # 1. Allowed File Validation
+        # 1. Allowed File Validation (including image types)
         t0 = time.time()
         try:
             document_service.validate_file("document.pdf", 500)
             document_service.validate_file("notes.docx", 500)
             document_service.validate_file("data.txt", 500)
+            document_service.validate_file("photo.jpg", 500)
+            document_service.validate_file("scan.jpeg", 500)
+            document_service.validate_file("screenshot.png", 500)
             test_results.append(("File Types Validation", "Document Parsing", "PASSED", f"{(time.time()-t0)*1000:.1f}ms"))
         except Exception as e:
             test_results.append(("File Types Validation", "Document Parsing", f"FAILED: {e}", f"{(time.time()-t0)*1000:.1f}ms"))
+
+        # 1b. Image types recognised as OCR path
+        t0 = time.time()
+        try:
+            assert document_service.is_ocr_path("scan.jpg") is True
+            assert document_service.is_ocr_path("photo.png") is True
+            assert document_service.is_ocr_path("report.pdf") is False
+            test_results.append(("OCR Path Detection", "Document Parsing", "PASSED", f"{(time.time()-t0)*1000:.1f}ms"))
+        except AssertionError as e:
+            test_results.append(("OCR Path Detection", "Document Parsing", f"FAILED: {e}", f"{(time.time()-t0)*1000:.1f}ms"))
 
         # 2. Invalid Extension Rejection
         t0 = time.time()

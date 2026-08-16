@@ -34,6 +34,6 @@ class Settings:
     # Input limits
     MAX_FILE_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB
     MAX_TEXT_LENGTH: int = 10000                 # 10,000 characters
-    ALLOWED_EXTENSIONS: set = {".pdf", ".docx", ".txt"}
+    ALLOWED_EXTENSIONS: set = {".pdf", ".docx", ".txt", ".jpg", ".jpeg", ".png"}
 
 settings = Settings()

@@ -251,9 +251,9 @@ with st.sidebar:
     # Document Upload Section
     st.markdown("### 📄 Document Uploader")
     uploaded_file = st.file_uploader(
-        "Upload reference file (.pdf, .docx, .txt)",
-        type=["pdf", "docx", "txt"],
-        help="Max size 10MB. Text is preserved across all tools."
+        "Upload reference file (.pdf, .docx, .txt, .jpg, .png)",
+        type=["pdf", "docx", "txt", "jpg", "jpeg", "png"],
+        help="Max size 10MB. Image/scanned files use OCR. Text is preserved across all tools."
     )
     
     if uploaded_file is not None:
@@ -261,27 +261,29 @@ with st.sidebar:
             if uploaded_file.size > 10 * 1024 * 1024:
                 st.error("File size exceeds 10 MB limit.")
             else:
-                with st.spinner("Parsing document content..."):
+                _ext = uploaded_file.name.lower().rsplit(".", 1)[-1]
+                _is_ocr = _ext in {"jpg", "jpeg", "png"}
+                _spinner_msg = (
+                    "🔍 Reading scanned document... this may take a moment."
+                    if _is_ocr
+                    else "Parsing document content..."
+                )
+                with st.spinner(_spinner_msg):
                     try:
-                        files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-                        resp = requests.post(f"{BACKEND_URL}/api/analyze", files=files, timeout=30)
-
-                        if resp.status_code == 200 and resp.json().get("success"):
-                            data = resp.json().get("data", {})
-                            if document_service:
-                                raw_text = document_service.extract_text(uploaded_file.getvalue(), uploaded_file.name)
-                            else:
-                                raw_text = data.get("main_topic", "") + "\n" + "\n".join(data.get("key_points", []))
-                            
+                        if document_service:
+                            raw_text = document_service.extract_text(uploaded_file.getvalue(), uploaded_file.name)
                             st.session_state.active_document_text = raw_text
                             st.session_state.active_document_name = uploaded_file.name
-                            st.success(f"Loaded: {uploaded_file.name}")
+                            st.success(f"✅ Loaded: {uploaded_file.name}" + (" (OCR)" if _is_ocr else ""))
                         else:
-                            if document_service:
-                                raw_text = document_service.extract_text(uploaded_file.getvalue(), uploaded_file.name)
+                            files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
+                            resp = requests.post(f"{BACKEND_URL}/api/analyze", files=files, timeout=60)
+                            if resp.status_code == 200 and resp.json().get("success"):
+                                data = resp.json().get("data", {})
+                                raw_text = data.get("main_topic", "") + "\n" + "\n".join(data.get("key_points", []))
                                 st.session_state.active_document_text = raw_text
                                 st.session_state.active_document_name = uploaded_file.name
-                                st.success(f"Loaded: {uploaded_file.name}")
+                                st.success(f"✅ Loaded: {uploaded_file.name}")
                     except Exception as e:
                         st.error(f"Upload error: {str(e)}")
 
@@ -295,7 +297,8 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("### 🛡️ Smart Features")
     st.caption("• **Continuation Engine**: Resumes truncated responses automatically up to 5 rounds.")
-    st.caption("• **Fallback Engine**: Retries failed calls across Gemini -> Groq -> OpenAI.")
+    st.caption("• **Fallback Engine**: Retries failed calls across Gemini → Groq → OpenAI.")
+    st.caption("• **OCR Engine**: Extracts text from scanned PDFs and images via Tesseract.")
 
 # Next-Step Suggestions Component
 def render_suggestions(suggestions_list: list):

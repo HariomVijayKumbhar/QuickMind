@@ -22,8 +22,22 @@ def test_health_endpoint():
 
 def test_document_validation_file_type():
     with pytest.raises(ValueError) as exc:
-        document_service.validate_file("image.png", 1000)
+        document_service.validate_file("image.gif", 1000)
     assert "Unsupported file type" in str(exc.value)
+
+def test_document_image_types_accepted():
+    # .jpg, .jpeg, .png should now be accepted without raising
+    for name in ["photo.jpg", "scan.jpeg", "screenshot.png"]:
+        ext = document_service.validate_file(name, 500)
+        assert ext in {".jpg", ".jpeg", ".png"}
+
+def test_ocr_path_detection():
+    assert document_service.is_ocr_path("scan.jpg") is True
+    assert document_service.is_ocr_path("scan.jpeg") is True
+    assert document_service.is_ocr_path("photo.png") is True
+    assert document_service.is_ocr_path("document.pdf") is False
+    assert document_service.is_ocr_path("notes.docx") is False
+    assert document_service.is_ocr_path("data.txt") is False
 
 def test_document_validation_text_length():
     with pytest.raises(ValueError) as exc:
