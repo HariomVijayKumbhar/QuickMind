@@ -121,25 +121,53 @@ HOST=0.0.0.0
 
 ## 🏃 Running the Application
 
-### Step 1: Start the FastAPI Backend Server
-From the root directory:
-```bash
-# Set PYTHONPATH to include backend folder
-# On Windows (PowerShell):
-$env:PYTHONPATH=".\backend"
+> **Note on Virtual Environment**: The `.venv` directory is located at the root project directory (`QuickMind\.venv`).
+
+---
+
+### Option A: Running from Project Root (`QuickMind\`)
+
+#### 1. Start Backend Server (Terminal 1):
+```powershell
+.\.venv\Scripts\python.exe backend/app/main.py
+```
+*(Runs FastAPI at http://localhost:8000. API docs available at http://localhost:8000/docs)*
+
+#### 2. Start Frontend App (Terminal 2):
+```powershell
+.\.venv\Scripts\streamlit.exe run frontend/app.py
+```
+*(Opens Streamlit app at http://localhost:8501)*
+
+---
+
+### Option B: Running from Subdirectories
+
+#### If your terminal is inside `backend/` (`QuickMind\backend`):
+```powershell
+..\.venv\Scripts\python.exe app/main.py
+```
+
+#### If your terminal is inside `frontend/` (`QuickMind\frontend`):
+```powershell
+..\.venv\Scripts\streamlit.exe run app.py
+```
+
+---
+
+### Option C: Activating Virtual Environment First
+
+In any terminal window:
+```powershell
+# Activate environment (from QuickMind root)
+.\.venv\Scripts\Activate.ps1
+
+# Start Backend:
 python backend/app/main.py
 
-# On Linux/macOS:
-PYTHONPATH=./backend python backend/app/main.py
-```
-The FastAPI backend will start at: `http://localhost:8000` (API documentation accessible at `http://localhost:8000/docs`).
-
-### Step 2: Start the Streamlit Frontend
-In a new terminal window (with `.venv` activated):
-```bash
+# Start Frontend (in second terminal):
 streamlit run frontend/app.py
 ```
-The Streamlit app will automatically open in your browser at: `http://localhost:8501`.
 
 ---
 
