@@ -89,15 +89,15 @@ def run_tests():
 
         routes_ok = (
             health_res.status_code == 200 and
-            sum_res.json().get("success") is False and
-            ask_res.json().get("success") is False and
-            gen_res.json().get("success") is False and
-            anz_res.json().get("success") is False
+            sum_res.status_code == 401 and
+            ask_res.status_code == 401 and
+            gen_res.status_code == 401 and
+            anz_res.status_code == 401
         )
         if routes_ok:
             test_results.append(("FastAPI Endpoints Integrity", "API Layer", "PASSED", f"{(time.time()-t0)*1000:.1f}ms"))
         else:
-            test_results.append(("FastAPI Endpoints Integrity", "API Layer", "FAILED: Unexpected status", f"{(time.time()-t0)*1000:.1f}ms"))
+            test_results.append(("FastAPI Endpoints Integrity", "API Layer", "FAILED: Unexpected status (expected 401 for protected routes)", f"{(time.time()-t0)*1000:.1f}ms"))
 
         # 5. Continuation Engine
         t0 = time.time()

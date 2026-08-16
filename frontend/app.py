@@ -188,6 +188,52 @@ if "preset_input" not in st.session_state:
     st.session_state.preset_input = ""
 if "target_tab_trigger" not in st.session_state:
     st.session_state.target_tab_trigger = None
+if "token" not in st.session_state:
+    st.session_state.token = None
+if "user_email" not in st.session_state:
+    st.session_state.user_email = None
+
+def get_auth_headers():
+    if st.session_state.token:
+        return {"Authorization": f"Bearer {st.session_state.token}"}
+    return {}
+
+# -----------------------------------------------------------------------------
+# AUTHENTICATION UI INTERCEPT
+# -----------------------------------------------------------------------------
+if not st.session_state.token:
+    st.markdown('<div class="brand-title" style="justify-content: center; margin-top: 5rem;">⚡ QuickMind AI</div>', unsafe_allow_html=True)
+    st.markdown('<div class="brand-subtitle" style="text-align: center;">Log in to access your intelligent workspace and persistent history.</div>', unsafe_allow_html=True)
+    
+    auth_col1, auth_col2, auth_col3 = st.columns([1, 2, 1])
+    with auth_col2:
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        auth_mode = st.radio("Mode", ["Login", "Sign Up"], horizontal=True, label_visibility="collapsed")
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        auth_email = st.text_input("Email", placeholder="you@example.com")
+        auth_pass = st.text_input("Password", type="password", placeholder="••••••••")
+        
+        if st.button(auth_mode, type="primary", use_container_width=True):
+            if not auth_email or not auth_pass:
+                st.error("Please enter email and password.")
+            else:
+                endpoint = "/api/auth/login" if auth_mode == "Login" else "/api/auth/signup"
+                try:
+                    resp = requests.post(f"{BACKEND_URL}{endpoint}", json={"email": auth_email, "password": auth_pass}, timeout=10)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        st.session_state.token = data.get("token")
+                        st.session_state.user_email = data.get("email")
+                        st.rerun()
+                    else:
+                        err = resp.json().get("detail", "Authentication failed.") if resp.text else "Failed"
+                        st.error(err)
+                except Exception as e:
+                    st.error(f"Connection error: {e}")
+        st.markdown('</div>', unsafe_allow_html=True)
+    st.stop()
+# -----------------------------------------------------------------------------
 
 # Header Branding
 st.markdown('<div class="brand-title">⚡ QuickMind AI Assistant</div>', unsafe_allow_html=True)
@@ -277,7 +323,7 @@ with st.sidebar:
                             st.success(f"✅ Loaded: {uploaded_file.name}" + (" (OCR)" if _is_ocr else ""))
                         else:
                             files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-                            resp = requests.post(f"{BACKEND_URL}/api/analyze", files=files, timeout=60)
+                            resp = requests.post(f"{BACKEND_URL}/api/analyze", files=files, headers=get_auth_headers(), timeout=60)
                             if resp.status_code == 200 and resp.json().get("success"):
                                 data = resp.json().get("data", {})
                                 raw_text = data.get("main_topic", "") + "\n" + "\n".join(data.get("key_points", []))
@@ -299,6 +345,13 @@ with st.sidebar:
     st.caption("• **Continuation Engine**: Resumes truncated responses automatically up to 5 rounds.")
     st.caption("• **Fallback Engine**: Retries failed calls across Gemini → Groq → OpenAI.")
     st.caption("• **OCR Engine**: Extracts text from scanned PDFs and images via Tesseract.")
+
+    st.markdown("---")
+    st.markdown(f"👤 **Logged in as:**\n\n`{st.session_state.user_email}`")
+    if st.button("🚪 Logout", use_container_width=True):
+        st.session_state.token = None
+        st.session_state.user_email = None
+        st.rerun()
 
 # Next-Step Suggestions Component
 def render_suggestions(suggestions_list: list):
@@ -327,16 +380,17 @@ def render_suggestions(suggestions_list: list):
                 st.rerun()
 
 # Tab Routing
-tab_options = ["Summarizer", "Ask Q&A", "Content Generator", "Document Analyzer"]
+tab_options = ["Summarizer", "Ask Q&A", "Content Generator", "Document Analyzer", "History"]
 selected_index = tab_options.index(st.session_state.target_tab_trigger) if st.session_state.target_tab_trigger in tab_options else 0
 if st.session_state.target_tab_trigger:
     st.session_state.target_tab_trigger = None
 
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📝 Text Summarizer", 
     "❓ Grounded Q&A", 
     "✍️ Content Generator", 
-    "📊 Document Analyzer"
+    "📊 Document Analyzer",
+    "🕰️ History"
 ])
 
 # TAB 1: SUMMARIZER
@@ -376,7 +430,7 @@ with tab1:
             with st.spinner("Processing summary with AI engine..."):
                 try:
                     payload = {"text": input_text.strip(), "length": summary_length}
-                    resp = requests.post(f"{BACKEND_URL}/api/summarize", json=payload, timeout=45)
+                    resp = requests.post(f"{BACKEND_URL}/api/summarize", json=payload, headers=get_auth_headers(), timeout=45)
                     
                     if resp.status_code == 200:
                         res_json = resp.json()
@@ -435,7 +489,7 @@ with tab2:
                         "question": qa_question.strip(),
                         "reference_text": qa_context_text.strip() if qa_context_text else None
                     }
-                    resp = requests.post(f"{BACKEND_URL}/api/ask", json=payload, timeout=45)
+                    resp = requests.post(f"{BACKEND_URL}/api/ask", json=payload, headers=get_auth_headers(), timeout=45)
                     
                     if resp.status_code == 200:
                         res_json = resp.json()
@@ -502,7 +556,7 @@ with tab3:
                         "tone": tone,
                         "key_points": key_points.strip() if key_points else None
                     }
-                    resp = requests.post(f"{BACKEND_URL}/api/generate", json=payload, timeout=45)
+                    resp = requests.post(f"{BACKEND_URL}/api/generate", json=payload, headers=get_auth_headers(), timeout=45)
                     
                     if resp.status_code == 200:
                         res_json = resp.json()
@@ -546,7 +600,7 @@ with tab4:
             with st.spinner("Analyzing document structure and action items..."):
                 try:
                     payload = {"text": analysis_text.strip()}
-                    resp = requests.post(f"{BACKEND_URL}/api/analyze", json=payload, timeout=45)
+                    resp = requests.post(f"{BACKEND_URL}/api/analyze", json=payload, headers=get_auth_headers(), timeout=45)
                     
                     if resp.status_code == 200:
                         res_json = resp.json()
@@ -585,6 +639,39 @@ with tab4:
         
         st.markdown("<br>", unsafe_allow_html=True)
         render_suggestions(st.session_state.latest_suggestions)
+
+# TAB 5: HISTORY
+with tab5:
+    st.markdown("### 🕰️ Operation History")
+    st.caption("Your recent AI requests, securely saved across sessions. Full document text is never stored.")
+    
+    if st.button("🔄 Refresh History"):
+        st.rerun()
+
+    try:
+        hist_resp = requests.get(f"{BACKEND_URL}/api/history", headers=get_auth_headers(), timeout=15)
+        if hist_resp.status_code == 200:
+            history_data = hist_resp.json().get("data", [])
+            if not history_data:
+                st.info("No history entries found yet. Try summarizing some text!")
+            else:
+                for entry in history_data:
+                    with st.expander(f"**{entry['operation_type'].upper()}** — {entry['created_at'][:16].replace('T', ' ')}"):
+                        st.markdown("**Input Preview:**")
+                        st.caption(f"_{entry['input_summary']}_")
+                        st.markdown("**Result:**")
+                        st.markdown(entry['result'])
+                        
+                        if st.button("🗑️ Delete", key=f"del_{entry['id']}", help="Permanently delete this entry"):
+                            del_resp = requests.delete(f"{BACKEND_URL}/api/history/{entry['id']}", headers=get_auth_headers())
+                            if del_resp.status_code == 200:
+                                st.rerun()
+                            else:
+                                st.error("Failed to delete entry.")
+        else:
+            st.error("Failed to load history. Please try again.")
+    except Exception as e:
+        st.error(f"Could not fetch history: {e}")
 
 # Footer
 st.markdown("---")

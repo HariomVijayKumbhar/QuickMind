@@ -1,6 +1,11 @@
 from typing import Optional
-from fastapi import APIRouter, Request, Form
+from fastapi import APIRouter, Request, Form, Depends
+from sqlalchemy.orm import Session
+
 from app.services.ai_service import ai_service
+from app.services.auth_service import get_current_user
+from app.database import get_db
+from app.models import User, HistoryEntry
 
 router = APIRouter(prefix="/api", tags=["Content Generation"])
 
@@ -10,7 +15,9 @@ async def generate_endpoint(
     content_type: Optional[str] = Form("Email"),
     topic: Optional[str] = Form(None),
     tone: Optional[str] = Form("Professional"),
-    key_points: Optional[str] = Form(None)
+    key_points: Optional[str] = Form(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     try:
         c_type = "Email"
@@ -39,10 +46,7 @@ async def generate_endpoint(
             c_points = key_points
 
         if not c_topic or not c_topic.strip():
-            return {
-                "success": False,
-                "error": "Please provide a topic or prompt for content generation."
-            }
+            return {"success": False, "error": "Please provide a topic or prompt for content generation."}
 
         res = ai_service.generate_content(
             content_type=c_type,
@@ -50,17 +54,18 @@ async def generate_endpoint(
             tone=c_tone,
             key_points=c_points
         )
-        return {
-            "success": True,
-            "data": res
-        }
+
+        # Save to history
+        db.add(HistoryEntry(
+            user_id=current_user.id,
+            operation_type="generate",
+            input_summary=f"[{c_type}] {c_topic[:180]}",
+            result=res.get("result", ""),
+        ))
+        db.commit()
+
+        return {"success": True, "data": res}
     except ValueError as ve:
-        return {
-            "success": False,
-            "error": str(ve)
-        }
+        return {"success": False, "error": str(ve)}
     except Exception as e:
-        return {
-            "success": False,
-            "error": f"An error occurred during content generation: {str(e)}"
-        }
+        return {"success": False, "error": f"An error occurred during content generation: {str(e)}"}

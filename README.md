@@ -58,6 +58,23 @@ If an AI provider encounters an initial connection error, authentication failure
 
 ---
 
+## 🔐 Authentication & Persistent History (Phase 3)
+
+QuickMind supports multi-user login and saves your workflow history securely:
+
+### 1. User Accounts & JWT
+- **Signup / Login**: Create an account with an email and password.
+- Passwords are securely hashed with `bcrypt` (never stored in plain text).
+- API requests are protected via JWT (JSON Web Tokens) Bearer auth.
+
+### 2. Operation History
+- **Database**: Uses SQLite (`quickmind.db`) — no external database server required.
+- **Persistent log**: Every AI operation (summarize, ask, generate, analyze) is saved to the active user's history.
+- **Privacy & Security**: Only a short preview (max 200 characters) of the input is saved to the database. The full document content is NEVER saved.
+- **Data Ownership**: Users can view and delete their own history entries. Users cannot access other users' data.
+
+---
+
 ## 📁 Folder Structure
 
 ```
@@ -247,6 +264,10 @@ All endpoints return structured JSON response formats.
 
 | Method | Endpoint | Description | Payload / Inputs |
 | :--- | :--- | :--- | :--- |
+| `POST` | `/api/auth/signup` | Register new user | `{ "email": "...", "password": "..." }` |
+| `POST` | `/api/auth/login` | Authenticate user | `{ "email": "...", "password": "..." }` |
+| `GET` | `/api/history` | Get logged-in user's history | Requires `Authorization: Bearer <token>` |
+| `DELETE` | `/api/history/{id}` | Delete history entry | Requires `Authorization: Bearer <token>` |
 | `POST` | `/api/summarize` | Summarize text or uploaded document | `{ "text": "...", "length": "short" \| "detailed" }` or File |
 | `POST` | `/api/ask` | Context-grounded Q&A | `{ "question": "...", "reference_text": "..." }` or File |
 | `POST` | `/api/generate` | Professional content creation | `{ "type": "Email", "topic": "...", "tone": "Professional" }` |

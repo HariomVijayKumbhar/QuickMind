@@ -1,7 +1,12 @@
 from typing import Optional
-from fastapi import APIRouter, Request, UploadFile, File, Form
+from fastapi import APIRouter, Request, UploadFile, File, Form, Depends
+from sqlalchemy.orm import Session
+
 from app.services.ai_service import ai_service
 from app.services.document_service import document_service
+from app.services.auth_service import get_current_user
+from app.database import get_db
+from app.models import User, HistoryEntry
 
 router = APIRouter(prefix="/api", tags=["Document Analysis"])
 
@@ -9,11 +14,13 @@ router = APIRouter(prefix="/api", tags=["Document Analysis"])
 async def analyze_endpoint(
     request: Request,
     text: Optional[str] = Form(None),
-    file: Optional[UploadFile] = File(None)
+    file: Optional[UploadFile] = File(None),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     try:
         content_to_analyze = ""
-        
+
         req_content_type = request.headers.get("content-type", "")
 
         # 1. Handle JSON request body
@@ -41,17 +48,18 @@ async def analyze_endpoint(
 
         document_service.validate_text_length(content_to_analyze)
         res = ai_service.analyze(content_to_analyze)
-        return {
-            "success": True,
-            "data": res
-        }
+
+        # Save to history
+        db.add(HistoryEntry(
+            user_id=current_user.id,
+            operation_type="analyze",
+            input_summary=content_to_analyze[:200],
+            result=str(res.get("main_topic", "")),
+        ))
+        db.commit()
+
+        return {"success": True, "data": res}
     except ValueError as ve:
-        return {
-            "success": False,
-            "error": str(ve)
-        }
+        return {"success": False, "error": str(ve)}
     except Exception as e:
-        return {
-            "success": False,
-            "error": f"An error occurred while analyzing the document: {str(e)}"
-        }
+        return {"success": False, "error": f"An error occurred while analyzing the document: {str(e)}"}

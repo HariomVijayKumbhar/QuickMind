@@ -1,7 +1,12 @@
 from typing import Optional
-from fastapi import APIRouter, Request, UploadFile, File, Form
+from fastapi import APIRouter, Request, UploadFile, File, Form, Depends
+from sqlalchemy.orm import Session
+
 from app.services.ai_service import ai_service
 from app.services.document_service import document_service
+from app.services.auth_service import get_current_user
+from app.database import get_db
+from app.models import User, HistoryEntry
 
 router = APIRouter(prefix="/api", tags=["Summarize"])
 
@@ -10,12 +15,14 @@ async def summarize_endpoint(
     request: Request,
     file: Optional[UploadFile] = File(None),
     text: Optional[str] = Form(None),
-    length: Optional[str] = Form("short")
+    length: Optional[str] = Form("short"),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     try:
         content_to_summarize = ""
         summary_length = "short"
-        
+
         content_type = request.headers.get("content-type", "")
 
         # 1. Handle JSON request body
@@ -46,17 +53,18 @@ async def summarize_endpoint(
 
         document_service.validate_text_length(content_to_summarize)
         res = ai_service.summarize(content_to_summarize, length=summary_length)
-        return {
-            "success": True,
-            "data": res
-        }
+
+        # Save to history (preview only — never full content)
+        db.add(HistoryEntry(
+            user_id=current_user.id,
+            operation_type="summarize",
+            input_summary=content_to_summarize[:200],
+            result=res.get("result", ""),
+        ))
+        db.commit()
+
+        return {"success": True, "data": res}
     except ValueError as ve:
-        return {
-            "success": False,
-            "error": str(ve)
-        }
+        return {"success": False, "error": str(ve)}
     except Exception as e:
-        return {
-            "success": False,
-            "error": f"An error occurred while generating summary: {str(e)}"
-        }
+        return {"success": False, "error": f"An error occurred while generating summary: {str(e)}"}
