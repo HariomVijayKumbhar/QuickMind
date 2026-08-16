@@ -2,6 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 from app.services.document_service import document_service
+from app.services.ai_service import ai_service
 
 client = TestClient(app)
 
@@ -61,3 +62,39 @@ def test_analyze_empty_input():
     data = response.json()
     assert data["success"] is False
     assert "provide either" in data["error"].lower()
+
+def test_provider_configuration_check():
+    assert isinstance(ai_service._is_provider_configured("gemini"), bool)
+    assert ai_service._is_provider_configured("unknown_provider") is False
+
+def test_continuation_stitching(monkeypatch):
+    calls = []
+    def mock_dispatch(prompt, provider, is_json=False):
+        calls.append((prompt, provider))
+        if len(calls) == 1:
+            return {"text": "Part 1 of answer", "finish_reason": "MAX_TOKENS"}
+        elif len(calls) == 2:
+            return {"text": "Part 2 of answer.", "finish_reason": "STOP"}
+            
+    monkeypatch.setattr(ai_service, "_dispatch_provider", mock_dispatch)
+    result = ai_service._generate_with_continuation("Write long article", provider="gemini")
+    assert result == "Part 1 of answer Part 2 of answer."
+    assert len(calls) == 2
+    # Verify both continuation calls used the SAME provider
+    assert calls[0][1] == "gemini"
+    assert calls[1][1] == "gemini"
+
+def test_fallback_mechanism(monkeypatch):
+    providers_called = []
+    def mock_continuation(prompt, provider, is_json=False):
+        providers_called.append(provider)
+        if provider == "gemini":
+            raise ValueError("Gemini connection error 500")
+        return "Response from Groq"
+
+    monkeypatch.setattr(ai_service, "_is_provider_configured", lambda p: True)
+    monkeypatch.setattr(ai_service, "_generate_with_continuation", mock_continuation)
+    
+    result = ai_service._generate_with_fallback("Test prompt")
+    assert result == "Response from Groq"
+    assert providers_called == ["gemini", "groq"]

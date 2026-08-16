@@ -34,9 +34,27 @@ Modern students, interns, and professionals waste significant time copying text 
 | :--- | :--- |
 | **Backend Framework** | Python 3.14 + FastAPI + Uvicorn |
 | **Frontend Framework** | Streamlit (Interactive Glassmorphic Dark UI) |
-| **AI Provider** | Google Gemini API (`gemini-2.5-flash` via `google-genai` SDK) |
+| **AI Providers** | Google Gemini, Groq (Llama 3.3 70B), OpenAI (GPT-4o mini) |
 | **Document Processing**| `pypdf` (PDF), `python-docx` (DOCX), UTF-8 text parser |
 | **Environment Handling**| `python-dotenv` |
+
+---
+
+## ⚡ Multi-Provider Fallback & Truncation Continuation (Phase 2)
+
+QuickMind includes advanced backend resilience features in `ai_service.py` to guarantee uninterrupted service and complete output generation:
+
+### 1. Truncation Continuation Engine
+When an AI provider cuts off a response mid-answer due to output token limits (`finish_reason == MAX_TOKENS` or `length`):
+- QuickMind automatically detects the cut-off.
+- It sends up to **5 continuation requests** to the **SAME provider and model** instructing it to resume exactly where it left off without repeating previous content.
+- All response chunks are stitched into a single complete response in a consistent tone.
+
+### 2. Multi-Provider Fallback Engine
+If an AI provider encounters an initial connection error, authentication failure, timeout, or rate limit before generating content:
+- QuickMind automatically retries the request using the next provider in the configured priority list (`PROVIDER_PRIORITY = ["gemini", "groq", "openai"]`).
+- Unconfigured providers (missing API keys) are skipped cleanly without crashing.
+- Fallback only triggers on initial request failure — never mid-answer during continuation.
 
 ---
 

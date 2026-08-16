@@ -12,9 +12,21 @@ load_dotenv(dotenv_path=ENV_PATH, override=True)
 class Settings:
     @property
     def GEMINI_API_KEY(self) -> str:
-        # Re-read .env dynamically so key updates take effect immediately
         load_dotenv(dotenv_path=ENV_PATH, override=True)
         return os.getenv("GEMINI_API_KEY", "")
+
+    @property
+    def GROQ_API_KEY(self) -> str:
+        load_dotenv(dotenv_path=ENV_PATH, override=True)
+        return os.getenv("GROQ_API_KEY", "")
+
+    @property
+    def OPENAI_API_KEY(self) -> str:
+        load_dotenv(dotenv_path=ENV_PATH, override=True)
+        return os.getenv("OPENAI_API_KEY", "")
+
+    # Provider Priority Order
+    PROVIDER_PRIORITY: list = ["gemini", "groq", "openai"]
 
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "8000"))
@@ -25,4 +37,3 @@ class Settings:
     ALLOWED_EXTENSIONS: set = {".pdf", ".docx", ".txt"}
 
 settings = Settings()
-
