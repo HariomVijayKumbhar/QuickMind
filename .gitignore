@@ -23,3 +23,7 @@ __pycache__/
 
 # Streamlit temporary files
 .streamlit/secrets.toml
+
+# Databases
+*.db
+*.sqlite3
