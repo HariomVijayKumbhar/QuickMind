@@ -38,23 +38,18 @@ class Settings:
             return secrets.token_hex(32)
         return key
 
-    # Provider Priority Order
     PROVIDER_PRIORITY: list = ["gemini", "groq", "openai"]
 
-    # Render provides the PORT environment variable. Keep 8000 as a local fallback.
-    HOST: str = _get_env.__func__("HOST", "0.0.0.0")
-    PORT: int = int(_get_env.__func__("PORT", "8000"))
+    HOST: str = "0.0.0.0"
+    PORT: int = int(os.getenv("PORT", "8000"))
 
-    # Input limits
-    MAX_FILE_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB
+    MAX_FILE_SIZE_BYTES: int = 10 * 1024 * 1024
     MAX_TEXT_LENGTH: int = 10000
     ALLOWED_EXTENSIONS: set = {".pdf", ".docx", ".txt", ".jpg", ".jpeg", ".png"}
 
-    # JWT settings
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_DAYS: int = 7
 
-    # Database
     DATABASE_URL: str = f"sqlite:///{BASE_DIR}/quickmind.db"
 
 
