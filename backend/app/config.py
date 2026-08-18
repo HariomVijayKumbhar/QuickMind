@@ -7,44 +7,47 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 ENV_PATH = BASE_DIR / ".env"
 
-# Initial load of environment variables
-load_dotenv(dotenv_path=ENV_PATH, override=True)
+# Load local environment variables when running locally.
+# On Render, environment variables configured in the dashboard are used.
+load_dotenv(dotenv_path=ENV_PATH, override=False)
+
 
 class Settings:
+    @staticmethod
+    def _get_env(name: str, default: str = "") -> str:
+        return os.getenv(name, default)
+
     @property
     def GEMINI_API_KEY(self) -> str:
-        load_dotenv(dotenv_path=ENV_PATH, override=True)
-        return os.getenv("GEMINI_API_KEY", "")
+        return self._get_env("GEMINI_API_KEY")
 
     @property
     def GROQ_API_KEY(self) -> str:
-        load_dotenv(dotenv_path=ENV_PATH, override=True)
-        return os.getenv("GROQ_API_KEY", "")
+        return self._get_env("GROQ_API_KEY")
 
     @property
     def OPENAI_API_KEY(self) -> str:
-        load_dotenv(dotenv_path=ENV_PATH, override=True)
-        return os.getenv("OPENAI_API_KEY", "")
+        return self._get_env("OPENAI_API_KEY")
 
     @property
     def JWT_SECRET_KEY(self) -> str:
-        load_dotenv(dotenv_path=ENV_PATH, override=True)
-        key = os.getenv("JWT_SECRET_KEY", "")
+        key = self._get_env("JWT_SECRET_KEY")
         if not key or key == "your_secret_key_here_change_this":
-            # Auto-generate a secure key if not set; stable per-process but
-            # note: tokens won't survive server restarts without a fixed key.
+            # Local fallback only. Set JWT_SECRET_KEY in Render for production
+            # so tokens remain valid after a restart/redeploy.
             return secrets.token_hex(32)
         return key
 
     # Provider Priority Order
     PROVIDER_PRIORITY: list = ["gemini", "groq", "openai"]
 
-    HOST: str = os.getenv("HOST", "0.0.0.0")
-    PORT: int = int(os.getenv("PORT", "8000"))
+    # Render provides the PORT environment variable. Keep 8000 as a local fallback.
+    HOST: str = _get_env.__func__("HOST", "0.0.0.0")
+    PORT: int = int(_get_env.__func__("PORT", "8000"))
 
     # Input limits
     MAX_FILE_SIZE_BYTES: int = 10 * 1024 * 1024  # 10 MB
-    MAX_TEXT_LENGTH: int = 10000                 # 10,000 characters
+    MAX_TEXT_LENGTH: int = 10000
     ALLOWED_EXTENSIONS: set = {".pdf", ".docx", ".txt", ".jpg", ".jpeg", ".png"}
 
     # JWT settings
@@ -53,5 +56,6 @@ class Settings:
 
     # Database
     DATABASE_URL: str = f"sqlite:///{BASE_DIR}/quickmind.db"
+
 
 settings = Settings()
