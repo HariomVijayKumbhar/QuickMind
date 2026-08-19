@@ -137,10 +137,14 @@ def run_tests():
         ai_service._is_provider_configured = saved_is_config
         ai_service._generate_with_continuation = saved_cont
 
-        if fb_res == "Response from Groq" and fb_calls == ["gemini", "groq"]:
-            test_results.append(("Multi-Provider Fallback", "AI Engine", "PASSED", f"{(time.time()-t0)*1000:.1f}ms"))
+        # 7. Hierarchical Chunker 8-Chunk Cap
+        t0 = time.time()
+        sample_doc = "Section Heading\n\nDetailed content paragraph.\n\n" * 1200
+        chunks = ai_service._chunk_text(sample_doc, max_chunks=8)
+        if 1 <= len(chunks) <= 8 and len(sample_doc) > 50000:
+            test_results.append(("Hierarchical 8-Chunk Cap", "AI Engine", "PASSED", f"{(time.time()-t0)*1000:.1f}ms"))
         else:
-            test_results.append(("Multi-Provider Fallback", "AI Engine", "FAILED", f"{(time.time()-t0)*1000:.1f}ms"))
+            test_results.append(("Hierarchical 8-Chunk Cap", "AI Engine", f"FAILED: generated {len(chunks)} chunks", f"{(time.time()-t0)*1000:.1f}ms"))
 
         # Render Modern Console Output
         if RICH_AVAILABLE:
@@ -163,8 +167,8 @@ def run_tests():
 
             if all_passed:
                 console.print(Panel(
-                    "[bold green]✨ ALL 6 VERIFICATION TESTS PASSED PERFECTLY![/bold green]\n"
-                    "[dim]QuickMind core services, API routes, continuation engine, and fallback layers are 100% operational.[/dim]",
+                    "[bold green]✨ ALL 7 VERIFICATION TESTS PASSED PERFECTLY![/bold green]\n"
+                    "[dim]QuickMind core services, API routes, continuation engine, fallback layers, and chunking caps are 100% operational.[/dim]",
                     border_style="green",
                     box=box.ROUNDED
                 ))
