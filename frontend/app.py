@@ -16,7 +16,7 @@ except ImportError:
     document_service = None
     settings = None
 
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+BACKEND_URL = os.getenv("BACKEND_URL", "https://quickmind-qy0t.onrender.com")
 
 # Page Configuration
 st.set_page_config(
@@ -238,6 +238,22 @@ if "token" not in st.session_state:
     st.session_state.token = None
 if "user_email" not in st.session_state:
     st.session_state.user_email = None
+if "summary_result" not in st.session_state:
+    st.session_state.summary_result = ""
+if "summary_suggestions" not in st.session_state:
+    st.session_state.summary_suggestions = []
+if "qa_result" not in st.session_state:
+    st.session_state.qa_result = ""
+if "qa_suggestions" not in st.session_state:
+    st.session_state.qa_suggestions = []
+if "generator_result" not in st.session_state:
+    st.session_state.generator_result = ""
+if "generator_suggestions" not in st.session_state:
+    st.session_state.generator_suggestions = []
+if "analyzer_result" not in st.session_state:
+    st.session_state.analyzer_result = None
+if "analyzer_suggestions" not in st.session_state:
+    st.session_state.analyzer_suggestions = []
 
 def get_auth_headers():
     if st.session_state.token:
@@ -400,7 +416,7 @@ with st.sidebar:
         st.rerun()
 
 # Next-Step Suggestions Component
-def render_suggestions(suggestions_list: list):
+def render_suggestions(suggestions_list: list, source_content: str = ""):
     if not suggestions_list:
         return
     st.markdown("#### ⚡ Intelligent Next Steps")
