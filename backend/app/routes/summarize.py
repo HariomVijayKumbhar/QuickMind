@@ -25,6 +25,8 @@ async def summarize_endpoint(
 
         content_type = request.headers.get("content-type", "")
 
+        is_file_upload = False
+
         # 1. Handle JSON request body
         if "application/json" in content_type:
             try:
@@ -37,8 +39,10 @@ async def summarize_endpoint(
         # 2. Handle file upload if provided
         if not content_to_summarize and file is not None and file.filename:
             file_bytes = await file.read()
+            document_service.validate_file(file.filename, len(file_bytes))
             content_to_summarize = document_service.extract_text(file_bytes, file.filename)
             summary_length = length or "short"
+            is_file_upload = True
 
         # 3. Handle Form text input
         if not content_to_summarize and text and text.strip():
@@ -51,7 +55,9 @@ async def summarize_endpoint(
                 "error": "Please provide either pasted text or upload a document file (.pdf, .docx, .txt) to summarize."
             }
 
-        document_service.validate_text_length(content_to_summarize)
+        if not is_file_upload:
+            document_service.validate_text_length(content_to_summarize)
+
         res = ai_service.summarize(content_to_summarize, length=summary_length)
 
         # Save to history (preview only — never full content)
