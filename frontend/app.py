@@ -27,19 +27,30 @@ st.set_page_config(
 )
 
 # Ultra-Modern CSS Theme Injection (Glassmorphism + Neon Accents + Custom Typography)
+# Ultra-Modern Responsive CSS Theme (Tested against Streamlit 1.32.0+)
 st.markdown("""
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet">
 
 <style>
-    /* Global Base */
+    /* Global Base & Typography */
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif;
+        overflow-x: hidden;
     }
     .stApp {
         background: radial-gradient(circle at 15% 15%, #1e1b4b 0%, #0f172a 45%, #020617 100%);
         color: #f8fafc;
+    }
+    
+    /* Code & Long text word wrapping safety */
+    code, pre, .inline-code, span, p, div, li, td, th {
+        overflow-wrap: break-word !important;
+        word-break: break-word !important;
+    }
+    code {
+        white-space: pre-wrap !important;
     }
     
     /* Hide Default Header/Footer elements */
@@ -49,7 +60,7 @@ st.markdown("""
     /* Headings */
     .brand-title {
         font-family: 'Outfit', sans-serif;
-        font-size: 2.5rem;
+        font-size: clamp(1.8rem, 4vw, 2.5rem);
         font-weight: 800;
         background: linear-gradient(135deg, #a855f7 0%, #6366f1 50%, #38bdf8 100%);
         -webkit-background-clip: text;
@@ -58,29 +69,26 @@ st.markdown("""
         margin-bottom: 0.2rem;
         display: flex;
         align-items: center;
+        flex-wrap: wrap;
         gap: 0.6rem;
     }
     .brand-subtitle {
-        font-size: 1.05rem;
+        font-size: clamp(0.85rem, 2vw, 1.05rem);
         color: #94a3b8;
         margin-bottom: 1.5rem;
         font-weight: 400;
+        line-height: 1.4;
     }
     
-    /* Top Metric Dashboard */
-    .dashboard-container {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1rem;
-        margin-bottom: 1.8rem;
-    }
+    /* Top Metric Cards */
     .dash-card {
         background: rgba(30, 41, 59, 0.45);
         border: 1px solid rgba(255, 255, 255, 0.08);
         border-radius: 14px;
-        padding: 1rem 1.2rem;
+        padding: 0.9rem 1.1rem;
         backdrop-filter: blur(16px);
         transition: all 0.3s ease;
+        margin-bottom: 0.5rem;
     }
     .dash-card:hover {
         border-color: rgba(99, 102, 241, 0.4);
@@ -95,7 +103,7 @@ st.markdown("""
         margin-bottom: 0.3rem;
     }
     .dash-value {
-        font-size: 1.25rem;
+        font-size: clamp(1rem, 2.5vw, 1.25rem);
         font-weight: 700;
         color: #f1f5f9;
         font-family: 'Outfit', sans-serif;
@@ -106,11 +114,12 @@ st.markdown("""
         background: rgba(30, 41, 59, 0.6);
         border: 1px solid rgba(168, 85, 247, 0.25);
         border-radius: 16px;
-        padding: 1.8rem;
+        padding: clamp(1rem, 3vw, 1.8rem);
         margin-top: 1.2rem;
         box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
         backdrop-filter: blur(20px);
         position: relative;
+        overflow-wrap: break-word;
     }
     .glass-card::before {
         content: '';
@@ -142,6 +151,8 @@ st.markdown("""
         border-radius: 9999px;
         font-size: 0.8rem;
         font-weight: 600;
+        max-width: 100%;
+        overflow-wrap: break-word;
     }
     .status-online {
         background: rgba(34, 197, 94, 0.15);
@@ -154,21 +165,56 @@ st.markdown("""
         border: 1px solid rgba(251, 191, 36, 0.3);
     }
 
-    /* Custom Button Styling */
+    /* Button Styling & Touch-Friendly Sizing (Min 44px on mobile) */
     .stButton > button {
         background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
         color: #ffffff;
         border: none;
         border-radius: 10px;
         font-weight: 600;
-        padding: 0.65rem 1.4rem;
+        min-height: 42px;
+        padding: 0.65rem 1.2rem;
         transition: all 0.25s ease;
         box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
     .stButton > button:hover {
         background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
         box-shadow: 0 6px 20px rgba(139, 92, 246, 0.5);
         transform: translateY(-1px);
+    }
+    
+    /* Responsive Breakpoints (< 768px Tablet & Mobile) */
+    @media (max-width: 768px) {
+        .block-container {
+            padding: 1rem 0.75rem 2rem 0.75rem !important;
+            max-width: 100% !important;
+        }
+        /* Stack column blocks vertically on small screens */
+        [data-testid="stHorizontalBlock"] {
+            flex-direction: column !important;
+            gap: 0.6rem !important;
+        }
+        [data-testid="column"] {
+            width: 100% !important;
+            flex: 1 1 100% !important;
+            min-width: 100% !important;
+        }
+        .stButton > button {
+            min-height: 46px !important;
+            font-size: 0.95rem !important;
+        }
+        .dash-card {
+            margin-bottom: 0.5rem !important;
+        }
+        /* Mobile-safe sidebar relative sizing */
+        section[data-testid="stSidebar"] {
+            width: 100% !important;
+            max-width: 100vw !important;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -361,7 +407,7 @@ def render_suggestions(suggestions_list: list):
     cols = st.columns(min(len(suggestions_list), 4))
     for idx, sug in enumerate(suggestions_list[:4]):
         with cols[idx]:
-            if st.button(f"👉 {sug}", key=f"sug_btn_{idx}_{hash(sug)}"):
+            if st.button(f"👉 {sug}", key=f"sug_btn_{idx}_{hash(sug)}", use_container_width=True):
                 text_content = st.session_state.latest_result or st.session_state.active_document_text
                 sug_lower = sug.lower()
                 
