@@ -226,10 +226,22 @@ if "active_document_text" not in st.session_state:
     st.session_state.active_document_text = ""
 if "active_document_name" not in st.session_state:
     st.session_state.active_document_name = ""
-if "latest_result" not in st.session_state:
-    st.session_state.latest_result = ""
-if "latest_suggestions" not in st.session_state:
-    st.session_state.latest_suggestions = []
+if "summary_result" not in st.session_state:
+    st.session_state.summary_result = ""
+if "summary_suggestions" not in st.session_state:
+    st.session_state.summary_suggestions = []
+if "qa_result" not in st.session_state:
+    st.session_state.qa_result = ""
+if "qa_suggestions" not in st.session_state:
+    st.session_state.qa_suggestions = []
+if "generator_result" not in st.session_state:
+    st.session_state.generator_result = ""
+if "generator_suggestions" not in st.session_state:
+    st.session_state.generator_suggestions = []
+if "analyzer_result" not in st.session_state:
+    st.session_state.analyzer_result = None
+if "analyzer_suggestions" not in st.session_state:
+    st.session_state.analyzer_suggestions = []
 if "preset_input" not in st.session_state:
     st.session_state.preset_input = ""
 if "target_tab_trigger" not in st.session_state:
@@ -400,7 +412,7 @@ with st.sidebar:
         st.rerun()
 
 # Next-Step Suggestions Component
-def render_suggestions(suggestions_list: list):
+def render_suggestions(suggestions_list: list, source_content: str = ""):
     if not suggestions_list:
         return
     st.markdown("#### ⚡ Intelligent Next Steps")
@@ -408,7 +420,7 @@ def render_suggestions(suggestions_list: list):
     for idx, sug in enumerate(suggestions_list[:4]):
         with cols[idx]:
             if st.button(f"👉 {sug}", key=f"sug_btn_{idx}_{hash(sug)}", use_container_width=True):
-                text_content = st.session_state.latest_result or st.session_state.active_document_text
+                text_content = source_content or st.session_state.active_document_text
                 sug_lower = sug.lower()
                 
                 if "question" in sug_lower or "ask" in sug_lower:
@@ -482,8 +494,8 @@ with tab1:
                         res_json = resp.json()
                         if res_json.get("success"):
                             data = res_json.get("data", {})
-                            st.session_state.latest_result = data.get("result", "")
-                            st.session_state.latest_suggestions = data.get("suggestions", [])
+                            st.session_state.summary_result = data.get("result", "")
+                            st.session_state.summary_suggestions = data.get("suggestions", [])
                             st.success("Summary ready!")
                         else:
                             st.error(res_json.get("error", "Failed to generate summary."))
@@ -492,14 +504,14 @@ with tab1:
                 except Exception as e:
                     st.error(f"Connection error: {str(e)}")
 
-    if st.session_state.latest_result and tab_options[selected_index] == "Summarizer":
+    if st.session_state.summary_result:
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         st.markdown('<div class="card-title">📄 Summary Output</div>', unsafe_allow_html=True)
-        st.markdown(st.session_state.latest_result)
+        st.markdown(st.session_state.summary_result)
         st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown("<br>", unsafe_allow_html=True)
-        render_suggestions(st.session_state.latest_suggestions)
+        render_suggestions(st.session_state.summary_suggestions, source_content=st.session_state.summary_result)
 
 # TAB 2: QUESTION ANSWERING
 with tab2:
@@ -541,8 +553,8 @@ with tab2:
                         res_json = resp.json()
                         if res_json.get("success"):
                             data = res_json.get("data", {})
-                            st.session_state.latest_result = data.get("result", "")
-                            st.session_state.latest_suggestions = data.get("suggestions", [])
+                            st.session_state.qa_result = data.get("result", "")
+                            st.session_state.qa_suggestions = data.get("suggestions", [])
                             st.success("Answer ready!")
                         else:
                             st.error(res_json.get("error", "Failed to answer question."))
@@ -551,14 +563,14 @@ with tab2:
                 except Exception as e:
                     st.error(f"Connection error: {str(e)}")
 
-    if st.session_state.latest_result and tab_options[selected_index] == "Ask Q&A":
+    if st.session_state.qa_result:
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         st.markdown('<div class="card-title">💡 Answer Result</div>', unsafe_allow_html=True)
-        st.markdown(st.session_state.latest_result)
+        st.markdown(st.session_state.qa_result)
         st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown("<br>", unsafe_allow_html=True)
-        render_suggestions(st.session_state.latest_suggestions)
+        render_suggestions(st.session_state.qa_suggestions, source_content=st.session_state.qa_result)
 
 # TAB 3: CONTENT GENERATOR
 with tab3:
@@ -608,8 +620,8 @@ with tab3:
                         res_json = resp.json()
                         if res_json.get("success"):
                             data = res_json.get("data", {})
-                            st.session_state.latest_result = data.get("result", "")
-                            st.session_state.latest_suggestions = data.get("suggestions", [])
+                            st.session_state.generator_result = data.get("result", "")
+                            st.session_state.generator_suggestions = data.get("suggestions", [])
                             st.success(f"{content_type} drafted!")
                         else:
                             st.error(res_json.get("error", "Failed to generate content."))
@@ -618,14 +630,14 @@ with tab3:
                 except Exception as e:
                     st.error(f"Connection error: {str(e)}")
 
-    if st.session_state.latest_result and tab_options[selected_index] == "Content Generator":
+    if st.session_state.generator_result:
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         st.markdown(f'<div class="card-title">✨ Generated {content_type}</div>', unsafe_allow_html=True)
-        st.code(st.session_state.latest_result, language="markdown")
+        st.code(st.session_state.generator_result, language="markdown")
         st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown("<br>", unsafe_allow_html=True)
-        render_suggestions(st.session_state.latest_suggestions)
+        render_suggestions(st.session_state.generator_suggestions, source_content=st.session_state.generator_result)
 
 # TAB 4: DOCUMENT ANALYZER
 with tab4:
@@ -652,8 +664,8 @@ with tab4:
                         res_json = resp.json()
                         if res_json.get("success"):
                             data = res_json.get("data", {})
-                            st.session_state.latest_analysis = data
-                            st.session_state.latest_suggestions = data.get("suggestions", [])
+                            st.session_state.analyzer_result = data
+                            st.session_state.analyzer_suggestions = data.get("suggestions", [])
                             st.success("Analysis complete!")
                         else:
                             st.error(res_json.get("error", "Failed to analyze document."))
@@ -662,8 +674,8 @@ with tab4:
                 except Exception as e:
                     st.error(f"Connection error: {str(e)}")
 
-    if "latest_analysis" in st.session_state and st.session_state.latest_analysis:
-        analysis = st.session_state.latest_analysis
+    if st.session_state.analyzer_result:
+        analysis = st.session_state.analyzer_result
         
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
         st.markdown('<div class="card-title">📌 Main Topic</div>', unsafe_allow_html=True)
@@ -684,7 +696,7 @@ with tab4:
         st.markdown('</div>', unsafe_allow_html=True)
         
         st.markdown("<br>", unsafe_allow_html=True)
-        render_suggestions(st.session_state.latest_suggestions)
+        render_suggestions(st.session_state.analyzer_suggestions, source_content=analysis.get("main_topic", ""))
 
 # TAB 5: HISTORY
 with tab5:
