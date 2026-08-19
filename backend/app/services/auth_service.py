@@ -21,11 +21,15 @@ logger = logging.getLogger("quickmind.auth")
 # ---- Password hashing -------------------------------------------------------
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+def _truncate(plain: str) -> str:
+    """Truncate to 72 bytes to respect bcrypt's hard limit."""
+    return plain.encode("utf-8")[:72].decode("utf-8", errors="ignore")
+
 def hash_password(plain: str) -> str:
-    return _pwd_context.hash(plain)
+    return _pwd_context.hash(_truncate(plain))
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return _pwd_context.verify(plain, hashed)
+    return _pwd_context.verify(_truncate(plain), hashed)
 
 # ---- JWT --------------------------------------------------------------------
 _bearer_scheme = HTTPBearer(auto_error=False)

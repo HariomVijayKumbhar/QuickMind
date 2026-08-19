@@ -89,14 +89,15 @@ class AIService:
         }
         
         payload = {
-            "model": "llama-3.3-70b-versatile",
+            "model": "openai/gpt-oss-120b",
             "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.3
+            "temperature": 0.3,
+            "reasoning_format": "hidden",
         }
         if is_json:
             payload["response_format"] = {"type": "json_object"}
             
-        with httpx.Client(timeout=30.0) as client:
+        with httpx.Client(timeout=60.0) as client:
             resp = client.post(url, headers=headers, json=payload)
             if resp.status_code != 200:
                 raise ValueError(f"Groq API error HTTP {resp.status_code}: {resp.text}")
@@ -104,7 +105,11 @@ class AIService:
             choice = data["choices"][0]
             raw_reason = choice.get("finish_reason", "stop").lower()
             finish_reason = "MAX_TOKENS" if raw_reason in ["length", "max_tokens"] else "STOP"
-            return {"text": choice["message"]["content"].strip(), "finish_reason": finish_reason}
+            message = choice.get("message", {})
+            text = (message.get("content") or message.get("reasoning") or "").strip()
+            if not text:
+                raise ValueError("Groq API returned an empty response.")
+            return {"text": text, "finish_reason": finish_reason}
 
     def _call_openai(self, prompt: str, is_json: bool = False) -> Dict[str, str]:
         key = settings.OPENAI_API_KEY

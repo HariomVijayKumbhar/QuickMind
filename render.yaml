@@ -4,7 +4,7 @@ services:
     name: quickmind-backend
     env: python
     buildCommand: "cd backend && pip install -r requirements.txt"
-    startCommand: "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    startCommand: "cd backend && python app/main.py"
     envVars:
       - key: GEMINI_API_KEY
         sync: false
@@ -21,8 +21,6 @@ services:
     startCommand: "cd frontend && streamlit run app.py --server.port $PORT --server.address 0.0.0.0"
     envVars:
       - key: BACKEND_URL
-        # This automatically grabs the backend URL and gives it to the frontend!
         fromService:
           type: web
           name: quickmind-backend
-          envVarKey: RENDER_EXTERNAL_URL
