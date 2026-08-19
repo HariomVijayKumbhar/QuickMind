@@ -226,22 +226,10 @@ if "active_document_text" not in st.session_state:
     st.session_state.active_document_text = ""
 if "active_document_name" not in st.session_state:
     st.session_state.active_document_name = ""
-if "summary_result" not in st.session_state:
-    st.session_state.summary_result = ""
-if "summary_suggestions" not in st.session_state:
-    st.session_state.summary_suggestions = []
-if "qa_result" not in st.session_state:
-    st.session_state.qa_result = ""
-if "qa_suggestions" not in st.session_state:
-    st.session_state.qa_suggestions = []
-if "generator_result" not in st.session_state:
-    st.session_state.generator_result = ""
-if "generator_suggestions" not in st.session_state:
-    st.session_state.generator_suggestions = []
-if "analyzer_result" not in st.session_state:
-    st.session_state.analyzer_result = None
-if "analyzer_suggestions" not in st.session_state:
-    st.session_state.analyzer_suggestions = []
+if "latest_result" not in st.session_state:
+    st.session_state.latest_result = ""
+if "latest_suggestions" not in st.session_state:
+    st.session_state.latest_suggestions = []
 if "preset_input" not in st.session_state:
     st.session_state.preset_input = ""
 if "target_tab_trigger" not in st.session_state:
@@ -412,7 +400,7 @@ with st.sidebar:
         st.rerun()
 
 # Next-Step Suggestions Component
-def render_suggestions(suggestions_list: list, source_content: str = ""):
+def render_suggestions(suggestions_list: list):
     if not suggestions_list:
         return
     st.markdown("#### ⚡ Intelligent Next Steps")
@@ -420,7 +408,7 @@ def render_suggestions(suggestions_list: list, source_content: str = ""):
     for idx, sug in enumerate(suggestions_list[:4]):
         with cols[idx]:
             if st.button(f"👉 {sug}", key=f"sug_btn_{idx}_{hash(sug)}", use_container_width=True):
-                text_content = source_content or st.session_state.active_document_text
+                text_content = st.session_state.latest_result or st.session_state.active_document_text
                 sug_lower = sug.lower()
                 
                 if "question" in sug_lower or "ask" in sug_lower:
