@@ -9,8 +9,8 @@ from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
+import bcrypt
 
 from app.config import settings
 from app.database import get_db
@@ -19,17 +19,20 @@ from app.models import User
 logger = logging.getLogger("quickmind.auth")
 
 # ---- Password hashing -------------------------------------------------------
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-def _truncate(plain: str) -> str:
-    """Truncate to 72 bytes to respect bcrypt's hard limit."""
-    return plain.encode("utf-8")[:72].decode("utf-8", errors="ignore")
-
 def hash_password(plain: str) -> str:
-    return _pwd_context.hash(_truncate(plain))
+    # Truncate to 72 bytes to respect bcrypt's hard limit
+    pw_bytes = plain.encode("utf-8")[:72]
+    salt = bcrypt.gensalt()
+    return bcrypt.hashpw(pw_bytes, salt).decode("utf-8")
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return _pwd_context.verify(_truncate(plain), hashed)
+    try:
+        pw_bytes = plain.encode("utf-8")[:72]
+        hashed_bytes = hashed.encode("utf-8")
+        return bcrypt.checkpw(pw_bytes, hashed_bytes)
+    except Exception as e:
+        logger.error(f"Error verifying password: {e}", exc_info=True)
+        return False
 
 # ---- JWT --------------------------------------------------------------------
 _bearer_scheme = HTTPBearer(auto_error=False)
