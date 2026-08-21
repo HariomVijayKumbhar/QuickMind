@@ -1,51 +1,15 @@
 import io
 import re
 import logging
-import shutil
 from typing import Optional
-import pypdf
+import pymupdf as fitz
 import docx
 from app.config import settings
+from app.services.ai_service import ai_service
 
 logger = logging.getLogger("quickmind.document_service")
 
-# ---------------------------------------------------------------------------
-# Runtime availability checks for optional OCR dependencies
-# ---------------------------------------------------------------------------
-try:
-    import pytesseract
-    from PIL import Image
-    _PYTESSERACT_AVAILABLE = True
-except ImportError:
-    _PYTESSERACT_AVAILABLE = False
-    logger.warning(
-        "pytesseract / Pillow not installed. OCR for images and scanned PDFs will be unavailable. "
-        "Install with: pip install pytesseract Pillow"
-    )
-
-try:
-    from pdf2image import convert_from_bytes
-    _PDF2IMAGE_AVAILABLE = True
-except ImportError:
-    _PDF2IMAGE_AVAILABLE = False
-    logger.warning(
-        "pdf2image not installed. OCR for scanned PDFs will be unavailable. "
-        "Install with: pip install pdf2image  (also requires system poppler)"
-    )
-
-# Check Tesseract binary at module load time
-_TESSERACT_BINARY_AVAILABLE = False
-if _PYTESSERACT_AVAILABLE:
-    if shutil.which("tesseract") is not None:
-        _TESSERACT_BINARY_AVAILABLE = True
-    else:
-        logger.warning(
-            "Tesseract OCR binary not found on PATH. "
-            "Install via: apt-get install tesseract-ocr  (Linux), "
-            "brew install tesseract  (macOS), or download from https://github.com/UB-Mannheim/tesseract/wiki  (Windows)."
-        )
-
-# Minimum useful characters from native PDF extraction before triggering OCR
+# Minimum useful characters from native PDF page extraction before triggering AI Vision fallback
 _MIN_NATIVE_PDF_CHARS = 20
 
 
@@ -104,7 +68,7 @@ class DocumentService:
 
     @classmethod
     def is_ocr_path(cls, filename: str) -> bool:
-        """Return True if this file will be processed via OCR (for UI messaging)."""
+        """Return True if this file will be processed via AI Vision / OCR (for UI messaging)."""
         ext = ("." + filename.lower().split(".")[-1]) if "." in filename else ""
         return ext in {".jpg", ".jpeg", ".png"}
 
@@ -120,9 +84,9 @@ class DocumentService:
         Routing:
           .txt              → UTF-8 / Latin-1 decode
           .docx             → python-docx paragraph extraction
-          .pdf              → pypdf native extraction; falls back to OCR if
-                              fewer than _MIN_NATIVE_PDF_CHARS useful chars.
-          .jpg/.jpeg/.png   → pytesseract OCR directly on the image
+          .pdf              → PyMuPDF (fitz) page extraction; falls back to AI Vision
+                              per scanned page if page text < _MIN_NATIVE_PDF_CHARS.
+          .jpg/.jpeg/.png   → AI Vision transcription directly on image bytes
         """
         ext = cls.validate_file(filename, len(file_bytes))
         cls.validate_content_signature(file_bytes, ext)
@@ -134,12 +98,12 @@ class DocumentService:
         elif ext == ".pdf":
             return cls._extract_pdf_with_ocr_fallback(file_bytes)
         elif ext in {".jpg", ".jpeg", ".png"}:
-            return cls._extract_image(file_bytes)
+            return cls._extract_image(file_bytes, filename)
         else:
             raise ValueError(f"Unsupported extension: {ext}")
 
     # ------------------------------------------------------------------
-    # Text-based extractors (unchanged behaviour)
+    # Text-based extractors
     # ------------------------------------------------------------------
 
     @staticmethod
@@ -171,61 +135,60 @@ class DocumentService:
             ) from e
 
     # ------------------------------------------------------------------
-    # PDF extraction with transparent OCR fallback
+    # PDF extraction using PyMuPDF (fitz) with AI Vision fallback
     # ------------------------------------------------------------------
 
     @classmethod
     def _extract_pdf_with_ocr_fallback(cls, file_bytes: bytes) -> str:
         """
-        Attempt native pypdf extraction.
-        If the result is too short (< _MIN_NATIVE_PDF_CHARS), treat the PDF as
-        a scanned document and run OCR via pdf2image + pytesseract.
+        Open PDF with PyMuPDF (fitz).
+        First attempt native text extraction per page (page.get_text()).
+        If a page's extracted text is empty or near-empty (< _MIN_NATIVE_PDF_CHARS),
+        render that page to PNG (200 DPI) and send to AI Vision service.
         """
-        # --- Native extraction attempt ---
         try:
-            reader = pypdf.PdfReader(io.BytesIO(file_bytes))
-            text_pages = []
-            for page in reader.pages:
-                page_text = page.extract_text()
-                if page_text:
-                    text_pages.append(page_text)
-            extracted = "\n\n".join(text_pages).strip()
-        except Exception as e:
-            extracted = ""
-            logger.warning("pypdf extraction failed (%s). Attempting OCR fallback.", e)
-
-        if len(extracted) >= _MIN_NATIVE_PDF_CHARS:
-            return extracted  # Fast path: text-based PDF ✓
-
-        # --- OCR fallback for scanned PDFs ---
-        logger.info("Native PDF extraction yielded %d chars — triggering OCR.", len(extracted))
-        return cls._ocr_pdf(file_bytes)
-
-    @classmethod
-    def _ocr_pdf(cls, file_bytes: bytes) -> str:
-        """Render scanned PDF pages to images, then OCR each page."""
-        cls._require_ocr()
-
-        if not _PDF2IMAGE_AVAILABLE:
-            raise ValueError(
-                "Scanned PDF detected, but pdf2image is not installed. "
-                "Install it with: pip install pdf2image  (and ensure system poppler is available)."
-            )
-
-        try:
-            images = convert_from_bytes(file_bytes, dpi=200)
+            doc = fitz.open(stream=file_bytes, filetype="pdf")
         except Exception as e:
             raise ValueError(
-                "Could not render scanned PDF to images. "
-                "Make sure poppler is installed on your system."
+                "Failed to parse PDF document. File might be corrupted."
             ) from e
 
+        total_pages = len(doc)
+        max_vision_pages = getattr(settings, "MAX_VISION_PAGES", 20)
+
         page_texts = []
-        for i, img in enumerate(images, start=1):
-            raw = pytesseract.image_to_string(img, lang="eng")
-            cleaned = cls._normalize_ocr_text(raw)
-            if cleaned:
-                page_texts.append(f"[Page {i}]\n{cleaned}")
+        text_page_count = 0
+        vision_page_count = 0
+        truncated_for_vision = False
+
+        for page_num in range(total_pages):
+            page = doc[page_num]
+            native_text = page.get_text().strip()
+
+            if len(native_text) >= _MIN_NATIVE_PDF_CHARS:
+                page_texts.append(native_text)
+                text_page_count += 1
+            else:
+                # Scanned or image-based page
+                if vision_page_count >= max_vision_pages:
+                    truncated_for_vision = True
+                    break
+
+                try:
+                    pix = page.get_pixmap(dpi=200)
+                    img_bytes = pix.tobytes("png")
+                    vision_raw = ai_service.extract_text_from_image(img_bytes, mime_type="image/png")
+                    cleaned = cls._normalize_ocr_text(vision_raw)
+                    if cleaned and cleaned != "NO_TEXT_FOUND":
+                        page_texts.append(f"[Page {page_num + 1}]\n{cleaned}")
+                        vision_page_count += 1
+                except Exception as e:
+                    logger.warning("AI Vision extraction failed for PDF page %d: %s", page_num + 1, e)
+
+        logger.info(
+            "PDF extraction finished: %d native text pages, %d vision pages (total %d pages).",
+            text_page_count, vision_page_count, total_pages
+        )
 
         combined = "\n\n".join(page_texts).strip()
         if not combined:
@@ -233,36 +196,32 @@ class DocumentService:
                 "Could not extract readable text from this file. "
                 "Please try a clearer scan or a text-based document."
             )
+
+        if truncated_for_vision:
+            combined += f"\n\n[Note: Document exceeded maximum limit of {max_vision_pages} pages for AI vision extraction and was truncated.]"
+
         return combined
 
     # ------------------------------------------------------------------
-    # Image OCR extractor (.jpg / .jpeg / .png)
+    # Image AI Vision extractor (.jpg / .jpeg / .png)
     # ------------------------------------------------------------------
 
     @classmethod
-    def _extract_image(cls, file_bytes: bytes) -> str:
-        """Run OCR directly on an image file."""
-        cls._require_ocr()
+    def _extract_image(cls, file_bytes: bytes, filename: str) -> str:
+        """Run AI Vision transcription directly on image bytes."""
+        ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+        mime_type = "image/png" if ext == "png" else "image/jpeg"
 
         try:
-            img = Image.open(io.BytesIO(file_bytes))
-            # Convert to RGB if needed (e.g. RGBA, palette-mode PNG)
-            if img.mode not in ("RGB", "L"):
-                img = img.convert("RGB")
+            raw = ai_service.extract_text_from_image(file_bytes, mime_type=mime_type)
         except Exception as e:
             raise ValueError(
-                "Could not open image file. The file may be corrupted or in an unsupported format."
-            ) from e
-
-        try:
-            raw = pytesseract.image_to_string(img, lang="eng")
-        except Exception as e:
-            raise ValueError(
-                "OCR processing failed. Ensure Tesseract is installed correctly."
+                "Could not extract readable text from this file. "
+                "Please try a clearer scan or a text-based document."
             ) from e
 
         result = cls._normalize_ocr_text(raw).strip()
-        if not result:
+        if not result or result == "NO_TEXT_FOUND":
             raise ValueError(
                 "Could not extract readable text from this file. "
                 "Please try a clearer scan or a text-based document."
@@ -276,36 +235,18 @@ class DocumentService:
     @staticmethod
     def _normalize_ocr_text(raw: str) -> str:
         """
-        Clean raw OCR output:
-        - Collapse runs of 3+ newlines into a paragraph break (double newline).
-        - Strip trailing whitespace on every line.
-        - Collapse internal spaces to single spaces.
+        Clean raw transcription output:
+        - Normalize line endings.
+        - Strip trailing whitespace per line.
+        - Collapse 3+ consecutive blank lines to two.
+        - Collapse multiple spaces/tabs on a single line.
         """
-        # Normalize line endings
         text = raw.replace("\r\n", "\n").replace("\r", "\n")
-        # Strip trailing whitespace per line
         text = "\n".join(line.rstrip() for line in text.split("\n"))
-        # Collapse 3+ consecutive blank lines to two
         text = re.sub(r"\n{3,}", "\n\n", text)
-        # Collapse multiple spaces/tabs on a single line
         text = re.sub(r"[ \t]{2,}", " ", text)
         return text.strip()
 
-    @staticmethod
-    def _require_ocr() -> None:
-        """Raise a clear, user-friendly error if OCR prerequisites are missing."""
-        if not _PYTESSERACT_AVAILABLE:
-            raise ValueError(
-                "OCR is not available: pytesseract or Pillow is not installed. "
-                "Run: pip install pytesseract Pillow"
-            )
-        if not _TESSERACT_BINARY_AVAILABLE:
-            raise ValueError(
-                "OCR is not available: the Tesseract binary was not found on PATH. "
-                "Install Tesseract: apt-get install tesseract-ocr  (Linux), "
-                "brew install tesseract  (macOS), or download from "
-                "https://github.com/UB-Mannheim/tesseract/wiki  (Windows)."
-            )
-
 
 document_service = DocumentService()
+

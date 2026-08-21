@@ -39,6 +39,8 @@ class Settings:
         return key
 
     PROVIDER_PRIORITY: list = ["gemini", "groq", "openai"]
+    VISION_PROVIDER_PRIORITY: list = ["gemini", "openai"]
+    MAX_VISION_PAGES: int = 20
 
     HOST: str = "0.0.0.0"
     PORT: int = int(os.getenv("PORT", "8000"))

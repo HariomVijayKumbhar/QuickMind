@@ -73,6 +73,12 @@ class TestRoutesAndServices(unittest.TestCase):
         document_service.validate_content_signature(b"\xff\xd8\xff jpeg data", ".jpg")
         document_service.validate_content_signature(b"\x89PNG\r\n data", ".png")
 
+    def test_ai_vision_image_extraction(self):
+        fake_png = b"\x89PNG\r\n\x1a\nfake_image_bytes"
+        with patch.object(ai_service, "extract_text_from_image", return_value="Sample text from vision model"):
+            res = document_service.extract_text(fake_png, "sample.png")
+            self.assertEqual(res, "Sample text from vision model")
+
     def test_document_extract_unauthenticated(self):
         response = client.post("/api/document/extract")
         self.assertEqual(response.status_code, 401)

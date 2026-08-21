@@ -1,5 +1,6 @@
 import json
 import logging
+import base64
 from typing import Dict, List, Any, Optional
 import httpx
 from google import genai
@@ -186,6 +187,118 @@ class AIService:
                 continue
                 
         raise ValueError(f"All AI providers failed. Details: {str(last_error)}")
+
+    def extract_text_from_image(self, image_bytes: bytes, mime_type: str = "image/png") -> str:
+        """
+        Transcribe text from an image using AI vision capabilities (Gemini / OpenAI).
+        No external system binaries (Tesseract/Poppler) required.
+        """
+        vision_priority = getattr(settings, "VISION_PROVIDER_PRIORITY", ["gemini", "openai"])
+        configured = [p for p in vision_priority if self._is_provider_configured(p)]
+        if not configured:
+            configured = ["gemini"]
+
+        last_err = None
+        for provider in configured:
+            try:
+                p = provider.lower()
+                if p == "gemini":
+                    text = self._call_gemini_vision(image_bytes, mime_type=mime_type)
+                elif p == "openai":
+                    text = self._call_openai_vision(image_bytes, mime_type=mime_type)
+                else:
+                    continue
+
+                logger.info(f"Image vision transcription served by AI provider: {provider.upper()}")
+                return text
+            except Exception as e:
+                logger.warning(f"Vision provider {provider.upper()} failed: {e}. Attempting fallback...")
+                last_err = e
+                continue
+
+        raise ValueError(f"All vision-capable AI providers failed. Details: {str(last_err)}")
+
+    def _call_gemini_vision(self, image_bytes: bytes, mime_type: str = "image/png") -> str:
+        key = settings.GEMINI_API_KEY
+        if not key or key == "your_gemini_api_key_here":
+            raise ValueError("Gemini API key is not configured.")
+
+        client = genai.Client(api_key=key)
+        image_part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
+        prompt = (
+            "Transcribe all readable text from this image exactly as it appears. "
+            "Do not summarize, explain, or add commentary — output only the transcribed text. "
+            "If the image contains no readable text, respond with exactly: NO_TEXT_FOUND."
+        )
+
+        candidate_models = [
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-flash",
+            "gemini-1.5-flash-latest",
+            "gemini-1.5-flash",
+            "gemini-1.5-flash-8b",
+            "gemini-1.5-pro",
+        ]
+        last_err = None
+        for m in candidate_models:
+            try:
+                resp = client.models.generate_content(model=m, contents=[image_part, prompt])
+                if resp and resp.text:
+                    return resp.text.strip()
+            except Exception as e:
+                last_err = e
+                continue
+
+        raise ValueError(f"Gemini Vision API failure: {str(last_err)}")
+
+    def _call_openai_vision(self, image_bytes: bytes, mime_type: str = "image/png") -> str:
+        key = settings.OPENAI_API_KEY
+        if not key or key == "your_openai_api_key_here":
+            raise ValueError("OpenAI API key is not configured.")
+
+        b64_img = base64.b64encode(image_bytes).decode("utf-8")
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {key}",
+            "Content-Type": "application/json",
+        }
+        prompt = (
+            "Transcribe all readable text from this image exactly as it appears. "
+            "Do not summarize, explain, or add commentary — output only the transcribed text. "
+            "If the image contains no readable text, respond with exactly: NO_TEXT_FOUND."
+        )
+
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:{mime_type};base64,{b64_img}"
+                            }
+                        },
+                        {
+                            "type": "text",
+                            "text": prompt
+                        }
+                    ]
+                }
+            ],
+            "temperature": 0.2
+        }
+
+        with httpx.Client(timeout=45.0) as client:
+            resp = client.post(url, headers=headers, json=payload)
+            if resp.status_code != 200:
+                raise ValueError(f"OpenAI Vision API error HTTP {resp.status_code}: {resp.text}")
+            data = resp.json()
+            text = data["choices"][0]["message"]["content"].strip()
+            if not text:
+                raise ValueError("OpenAI Vision API returned an empty response.")
+            return text
 
     def _chunk_text(self, text: str, max_chunks: int = 8, target_chunk_size: int = 4000) -> List[str]:
         """

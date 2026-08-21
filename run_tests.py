@@ -97,6 +97,21 @@ def run_tests():
         except Exception as e:
             test_results.append(("Magic-Byte Content Validation", "Document Parsing", f"FAILED: {e}", f"{(time.time()-t0)*1000:.1f}ms"))
 
+        # 4b. AI Vision Image Extraction
+        t0 = time.time()
+        try:
+            saved_vision = ai_service.extract_text_from_image
+            ai_service.extract_text_from_image = lambda img, mime_type="image/png": "Transcribed image text via AI Vision"
+            fake_png = b"\x89PNG\r\n\x1a\nfake_image_bytes"
+            vision_result = document_service.extract_text(fake_png, "sample.png")
+            ai_service.extract_text_from_image = saved_vision
+            if "Transcribed image text via AI Vision" in vision_result:
+                test_results.append(("AI Vision Image Extraction", "Document Parsing", "PASSED", f"{(time.time()-t0)*1000:.1f}ms"))
+            else:
+                test_results.append(("AI Vision Image Extraction", "Document Parsing", "FAILED: Unexpected result", f"{(time.time()-t0)*1000:.1f}ms"))
+        except Exception as e:
+            test_results.append(("AI Vision Image Extraction", "Document Parsing", f"FAILED: {e}", f"{(time.time()-t0)*1000:.1f}ms"))
+
         # 5. FastAPI Routes & Endpoints (including /api/document/extract)
         t0 = time.time()
         client = TestClient(app)
