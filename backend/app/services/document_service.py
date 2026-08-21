@@ -1,16 +1,48 @@
 import io
+import os
 import re
+import sys
 import logging
 from typing import Optional
 import pymupdf as fitz
 import docx
+from PIL import Image
 from app.config import settings
 from app.services.ai_service import ai_service
 
 logger = logging.getLogger("quickmind.document_service")
 
-# Minimum useful characters from native PDF page extraction before triggering AI Vision fallback
+# Minimum useful characters from native PDF text extraction before treating as scanned
 _MIN_NATIVE_PDF_CHARS = 20
+
+# ---------------------------------------------------------------------------
+# Tesseract OCR setup — auto-detect on Windows, fall through to PATH on Linux
+# ---------------------------------------------------------------------------
+try:
+    import pytesseract  # type: ignore
+
+    # On Windows, Tesseract is typically installed to a fixed location.
+    # On Linux (Render / Ubuntu), it is on PATH via apt-get install tesseract-ocr.
+    # Priority: env-var override → known Windows path → system PATH
+    _tesseract_cmd = os.getenv("TESSERACT_CMD")  # explicit override always wins
+    if not _tesseract_cmd and sys.platform.startswith("win"):
+        _win_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+        if os.path.isfile(_win_path):
+            _tesseract_cmd = _win_path
+
+    if _tesseract_cmd:
+        pytesseract.pytesseract.tesseract_cmd = _tesseract_cmd
+
+    # Verify Tesseract is actually callable at startup
+    pytesseract.get_tesseract_version()
+    _TESSERACT_AVAILABLE = True
+    logger.info("Tesseract OCR detected and available (cmd=%s).", _tesseract_cmd or "system PATH")
+except Exception as _tess_err:
+    _TESSERACT_AVAILABLE = False
+    pytesseract = None  # type: ignore
+    logger.warning(
+        "Tesseract OCR not available (%s). Scanned PDFs will fall back to AI Vision.", _tess_err
+    )
 
 
 class DocumentService:
@@ -84,8 +116,8 @@ class DocumentService:
         Routing:
           .txt              → UTF-8 / Latin-1 decode
           .docx             → python-docx paragraph extraction
-          .pdf              → PyMuPDF (fitz) page extraction; falls back to AI Vision
-                              per scanned page if page text < _MIN_NATIVE_PDF_CHARS.
+          .pdf              → PyMuPDF native text; auto-falls back to Tesseract OCR
+                              (then AI Vision) for scanned/image pages
           .jpg/.jpeg/.png   → AI Vision transcription directly on image bytes
         """
         ext = cls.validate_file(filename, len(file_bytes))
@@ -135,16 +167,26 @@ class DocumentService:
             ) from e
 
     # ------------------------------------------------------------------
-    # PDF extraction using PyMuPDF (fitz) with AI Vision fallback
+    # PDF extraction: native text → Tesseract OCR → AI Vision fallback
     # ------------------------------------------------------------------
 
     @classmethod
     def _extract_pdf_with_ocr_fallback(cls, file_bytes: bytes) -> str:
         """
         Open PDF with PyMuPDF (fitz).
-        First attempt native text extraction per page (page.get_text()).
-        If a page's extracted text is empty or near-empty (< _MIN_NATIVE_PDF_CHARS),
-        render that page to PNG (200 DPI) and send to AI Vision service.
+
+        Pipeline per page:
+          1. Try native text extraction (page.get_text()).
+          2. If page has sufficient native text (>= _MIN_NATIVE_PDF_CHARS), use it directly.
+          3. If page is scanned/image-based (empty or near-empty text):
+             a. Render the page to a PNG image at 200 DPI.
+             b. Try Tesseract OCR via pytesseract (if available).
+             c. If Tesseract unavailable or fails, fall back to AI Vision.
+          4. Combine all page texts in order.
+          5. If the combined result is empty, raise a descriptive error.
+
+        No API key or internet connection is required for Tesseract OCR.
+        AI Vision fallback uses the configured Gemini/OpenAI key.
         """
         try:
             doc = fitz.open(stream=file_bytes, filetype="pdf")
@@ -154,53 +196,94 @@ class DocumentService:
             ) from e
 
         total_pages = len(doc)
-        max_vision_pages = getattr(settings, "MAX_VISION_PAGES", 20)
+        max_ocr_pages = getattr(settings, "MAX_VISION_PAGES", 20)
 
-        page_texts = []
+        page_texts: list[str] = []
         text_page_count = 0
-        vision_page_count = 0
-        truncated_for_vision = False
+        ocr_page_count = 0
+        truncated = False
 
         for page_num in range(total_pages):
             page = doc[page_num]
             native_text = page.get_text().strip()
 
             if len(native_text) >= _MIN_NATIVE_PDF_CHARS:
+                # Text-based page — use native extraction unchanged
                 page_texts.append(native_text)
                 text_page_count += 1
             else:
-                # Scanned or image-based page
-                if vision_page_count >= max_vision_pages:
-                    truncated_for_vision = True
+                # Scanned / image-based page — needs OCR
+                if ocr_page_count >= max_ocr_pages:
+                    truncated = True
                     break
 
-                try:
-                    pix = page.get_pixmap(dpi=200)
-                    img_bytes = pix.tobytes("png")
-                    vision_raw = ai_service.extract_text_from_image(img_bytes, mime_type="image/png")
-                    cleaned = cls._normalize_ocr_text(vision_raw)
-                    if cleaned and cleaned != "NO_TEXT_FOUND":
-                        page_texts.append(f"[Page {page_num + 1}]\n{cleaned}")
-                        vision_page_count += 1
-                except Exception as e:
-                    logger.warning("AI Vision extraction failed for PDF page %d: %s", page_num + 1, e)
+                # Render page to PNG at 200 DPI
+                pix = page.get_pixmap(dpi=200)
+                img_bytes = pix.tobytes("png")
+
+                ocr_text = cls._ocr_image_bytes(img_bytes, page_num + 1)
+                if ocr_text:
+                    page_texts.append(f"[Page {page_num + 1}]\n{ocr_text}")
+                    ocr_page_count += 1
 
         logger.info(
-            "PDF extraction finished: %d native text pages, %d vision pages (total %d pages).",
-            text_page_count, vision_page_count, total_pages
+            "PDF extraction complete: %d native-text pages, %d OCR pages (total %d pages).",
+            text_page_count, ocr_page_count, total_pages,
         )
 
         combined = "\n\n".join(page_texts).strip()
         if not combined:
             raise ValueError(
-                "Could not extract readable text from this file. "
-                "Please try a clearer scan or a text-based document."
+                "Could not extract text from this scanned PDF. "
+                "Please try a clearer document."
             )
 
-        if truncated_for_vision:
-            combined += f"\n\n[Note: Document exceeded maximum limit of {max_vision_pages} pages for AI vision extraction and was truncated.]"
+        if truncated:
+            combined += (
+                f"\n\n[Note: Document exceeded the maximum of {max_ocr_pages} "
+                "OCR pages and was truncated.]"
+            )
 
         return combined
+
+    @classmethod
+    def _ocr_image_bytes(cls, img_bytes: bytes, page_num: int = 0) -> str:
+        """
+        Run OCR on raw PNG/JPEG bytes.
+
+        Strategy:
+          1. Tesseract OCR (local, free, no API key needed) — tried first.
+          2. AI Vision (Gemini / OpenAI) — fallback if Tesseract is unavailable or fails.
+
+        Returns cleaned OCR text, or empty string if nothing legible was found.
+        """
+        # --- Tesseract path ---
+        if _TESSERACT_AVAILABLE and pytesseract is not None:
+            try:
+                pil_img = Image.open(io.BytesIO(img_bytes))
+                raw = pytesseract.image_to_string(pil_img, lang="eng")
+                cleaned = cls._normalize_ocr_text(raw)
+                if cleaned:
+                    logger.debug("Tesseract OCR succeeded for page %d.", page_num)
+                    return cleaned
+                # Tesseract returned blank — still try AI Vision below
+                logger.debug("Tesseract returned no text for page %d; trying AI Vision.", page_num)
+            except Exception as e:
+                logger.warning(
+                    "Tesseract OCR failed for page %d (%s); trying AI Vision.", page_num, e
+                )
+
+        # --- AI Vision fallback ---
+        try:
+            vision_raw = ai_service.extract_text_from_image(img_bytes, mime_type="image/png")
+            cleaned = cls._normalize_ocr_text(vision_raw)
+            if cleaned and cleaned != "NO_TEXT_FOUND":
+                logger.debug("AI Vision OCR succeeded for page %d.", page_num)
+                return cleaned
+        except Exception as e:
+            logger.warning("AI Vision extraction failed for PDF page %d: %s", page_num, e)
+
+        return ""
 
     # ------------------------------------------------------------------
     # Image AI Vision extractor (.jpg / .jpeg / .png)
@@ -249,4 +332,3 @@ class DocumentService:
 
 
 document_service = DocumentService()
-

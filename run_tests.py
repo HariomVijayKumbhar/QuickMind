@@ -112,6 +112,96 @@ def run_tests():
         except Exception as e:
             test_results.append(("AI Vision Image Extraction", "Document Parsing", f"FAILED: {e}", f"{(time.time()-t0)*1000:.1f}ms"))
 
+        # --- OCR Pipeline Tests ---
+
+        # 4c. Text PDF — OCR must NOT be triggered
+        t0 = time.time()
+        try:
+            import pymupdf as fitz
+            doc = fitz.open()
+            page = doc.new_page()
+            page.insert_text((72, 72), "This is a normal text-based PDF for QuickMind.")
+            pdf_bytes = doc.tobytes()
+            doc.close()
+            _ocr_called = [False]
+            _orig_ocr = document_service._ocr_image_bytes
+            def _spy_ocr(*a, **kw):
+                _ocr_called[0] = True
+                return _orig_ocr(*a, **kw)
+            document_service._ocr_image_bytes = _spy_ocr
+            txt_result = document_service.extract_text(pdf_bytes, "text_sample.pdf")
+            document_service._ocr_image_bytes = _orig_ocr
+            if not _ocr_called[0] and "QuickMind" in txt_result:
+                test_results.append(("Text PDF (no OCR)", "OCR Pipeline", "PASSED", f"{(time.time()-t0)*1000:.1f}ms"))
+            else:
+                test_results.append(("Text PDF (no OCR)", "OCR Pipeline", "FAILED: OCR was unexpectedly invoked", f"{(time.time()-t0)*1000:.1f}ms"))
+        except Exception as e:
+            test_results.append(("Text PDF (no OCR)", "OCR Pipeline", f"FAILED: {e}", f"{(time.time()-t0)*1000:.1f}ms"))
+
+        # 4d. Scanned PDF — OCR must be triggered
+        t0 = time.time()
+        try:
+            doc = fitz.open()
+            doc.new_page()  # blank page = no native text
+            pdf_bytes = doc.tobytes()
+            doc.close()
+            from app.services.document_service import DocumentService
+            from unittest.mock import patch as _patch
+            with _patch.object(DocumentService, '_ocr_image_bytes', return_value="Scanned OCR Result") as mock_ocr:
+                scanned_result = document_service.extract_text(pdf_bytes, "scanned_notes.pdf")
+            if "Scanned OCR Result" in scanned_result and "[Page 1]" in scanned_result:
+                test_results.append(("Scanned PDF Tesseract OCR", "OCR Pipeline", "PASSED", f"{(time.time()-t0)*1000:.1f}ms"))
+            else:
+                test_results.append(("Scanned PDF Tesseract OCR", "OCR Pipeline", f"FAILED: got: {scanned_result[:80]}", f"{(time.time()-t0)*1000:.1f}ms"))
+        except Exception as e:
+            test_results.append(("Scanned PDF Tesseract OCR", "OCR Pipeline", f"FAILED: {e}", f"{(time.time()-t0)*1000:.1f}ms"))
+
+        # 4e. Multi-page scanned PDF — all pages OCR'd
+        t0 = time.time()
+        try:
+            doc = fitz.open()
+            for _ in range(3):
+                doc.new_page()  # 3 blank pages
+            pdf_bytes = doc.tobytes()
+            doc.close()
+            _page_idx = [0]
+            _responses = ["Page one text", "Page two text", "Page three text"]
+            def _multi_ocr(cls_or_self, img_bytes, page_num=0):
+                resp = _responses[_page_idx[0]] if _page_idx[0] < len(_responses) else ""
+                _page_idx[0] += 1
+                return resp
+            from app.services.document_service import DocumentService
+            from unittest.mock import patch as _patch
+            with _patch.object(DocumentService, '_ocr_image_bytes', side_effect=_multi_ocr):
+                multi_result = document_service.extract_text(pdf_bytes, "multipage.pdf")
+            if _page_idx[0] == 3 and all(p in multi_result for p in _responses):
+                test_results.append(("Multi-page Scanned PDF OCR", "OCR Pipeline", "PASSED", f"{(time.time()-t0)*1000:.1f}ms"))
+            else:
+                test_results.append(("Multi-page Scanned PDF OCR", "OCR Pipeline", f"FAILED: OCR called {_page_idx[0]} times", f"{(time.time()-t0)*1000:.1f}ms"))
+        except Exception as e:
+            test_results.append(("Multi-page Scanned PDF OCR", "OCR Pipeline", f"FAILED: {e}", f"{(time.time()-t0)*1000:.1f}ms"))
+
+        # 4f. Empty scanned PDF — must raise descriptive error
+        t0 = time.time()
+        try:
+            doc = fitz.open()
+            doc.new_page()
+            pdf_bytes = doc.tobytes()
+            doc.close()
+            from app.services.document_service import DocumentService
+            from unittest.mock import patch as _patch
+            with _patch.object(DocumentService, '_ocr_image_bytes', return_value=""):
+                try:
+                    document_service.extract_text(pdf_bytes, "empty_scan.pdf")
+                    test_results.append(("Empty Scanned PDF Error", "OCR Pipeline", "FAILED: No error raised", f"{(time.time()-t0)*1000:.1f}ms"))
+                except ValueError as ve:
+                    if "Could not extract text from this scanned PDF" in str(ve):
+                        test_results.append(("Empty Scanned PDF Error", "OCR Pipeline", "PASSED", f"{(time.time()-t0)*1000:.1f}ms"))
+                    else:
+                        test_results.append(("Empty Scanned PDF Error", "OCR Pipeline", f"FAILED: Wrong message: {ve}", f"{(time.time()-t0)*1000:.1f}ms"))
+        except Exception as e:
+            test_results.append(("Empty Scanned PDF Error", "OCR Pipeline", f"FAILED: {e}", f"{(time.time()-t0)*1000:.1f}ms"))
+
         # 5. FastAPI Routes & Endpoints (including /api/document/extract)
         t0 = time.time()
         client = TestClient(app)
@@ -205,7 +295,7 @@ def run_tests():
             if all_passed:
                 console.print(Panel(
                     f"[bold green]✨ ALL {len(test_results)} VERIFICATION TESTS PASSED PERFECTLY![/bold green]\n"
-                    "[dim]QuickMind core services, API routes, continuation engine, fallback layers, and chunking caps are 100% operational.[/dim]",
+                    "[dim]QuickMind core services, OCR pipeline, API routes, continuation engine, fallback layers, and chunking caps are 100% operational.[/dim]",
                     border_style="green",
                     box=box.ROUNDED
                 ))
