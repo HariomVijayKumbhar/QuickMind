@@ -77,7 +77,27 @@ def run_tests():
         except ValueError:
             test_results.append(("Character Limit (10k)", "Input Security", "PASSED", f"{(time.time()-t0)*1000:.1f}ms"))
 
-        # 4. FastAPI Routes & Endpoints
+        # 4. Content Magic-Byte Validation (Fix 4)
+        t0 = time.time()
+        try:
+            # Fake PDF bytes (plain text) should fail content signature validation
+            fake_pdf = b"This is just plain text, not a PDF"
+            try:
+                document_service.extract_text(fake_pdf, "fake.pdf")
+                test_results.append(("Magic-Byte Content Validation", "Document Parsing", "FAILED: Allowed invalid PDF signature", f"{(time.time()-t0)*1000:.1f}ms"))
+            except ValueError as ve:
+                if "doesn't appear to be a valid .pdf file" in str(ve):
+                    # Valid signature test
+                    valid_pdf_prefix = b"%PDF-1.4\n..."
+                    # Check that signature validator itself passes
+                    document_service.validate_content_signature(valid_pdf_prefix, ".pdf")
+                    test_results.append(("Magic-Byte Content Validation", "Document Parsing", "PASSED", f"{(time.time()-t0)*1000:.1f}ms"))
+                else:
+                    test_results.append(("Magic-Byte Content Validation", "Document Parsing", f"FAILED: Unexpected message: {ve}", f"{(time.time()-t0)*1000:.1f}ms"))
+        except Exception as e:
+            test_results.append(("Magic-Byte Content Validation", "Document Parsing", f"FAILED: {e}", f"{(time.time()-t0)*1000:.1f}ms"))
+
+        # 5. FastAPI Routes & Endpoints (including /api/document/extract)
         t0 = time.time()
         client = TestClient(app)
         
@@ -86,13 +106,15 @@ def run_tests():
         ask_res = client.post("/api/ask", json={"question": ""})
         gen_res = client.post("/api/generate", json={"topic": ""})
         anz_res = client.post("/api/analyze", json={"text": ""})
+        extract_res = client.post("/api/document/extract")
 
         routes_ok = (
             health_res.status_code == 200 and
             sum_res.status_code == 401 and
             ask_res.status_code == 401 and
             gen_res.status_code == 401 and
-            anz_res.status_code == 401
+            anz_res.status_code == 401 and
+            extract_res.status_code == 401
         )
         if routes_ok:
             test_results.append(("FastAPI Endpoints Integrity", "API Layer", "PASSED", f"{(time.time()-t0)*1000:.1f}ms"))
@@ -167,7 +189,7 @@ def run_tests():
 
             if all_passed:
                 console.print(Panel(
-                    "[bold green]✨ ALL 7 VERIFICATION TESTS PASSED PERFECTLY![/bold green]\n"
+                    f"[bold green]✨ ALL {len(test_results)} VERIFICATION TESTS PASSED PERFECTLY![/bold green]\n"
                     "[dim]QuickMind core services, API routes, continuation engine, fallback layers, and chunking caps are 100% operational.[/dim]",
                     border_style="green",
                     box=box.ROUNDED

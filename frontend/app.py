@@ -384,14 +384,17 @@ with st.sidebar:
                             st.session_state.active_document_name = uploaded_file.name
                             st.success(f"✅ Loaded: {uploaded_file.name}" + (" (OCR)" if _is_ocr else ""))
                         else:
+                            # Remote path: call the dedicated extract endpoint which returns
+                            # the full raw text — NOT an AI-generated summary proxy.
                             files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-                            resp = requests.post(f"{BACKEND_URL}/api/analyze", files=files, headers=get_auth_headers(), timeout=60)
+                            resp = requests.post(f"{BACKEND_URL}/api/document/extract", files=files, headers=get_auth_headers(), timeout=60)
                             if resp.status_code == 200 and resp.json().get("success"):
                                 data = resp.json().get("data", {})
-                                raw_text = data.get("main_topic", "") + "\n" + "\n".join(data.get("key_points", []))
+                                raw_text = data.get("text", "")
                                 st.session_state.active_document_text = raw_text
                                 st.session_state.active_document_name = uploaded_file.name
-                                st.success(f"✅ Loaded: {uploaded_file.name}")
+                                _remote_ocr = data.get("is_ocr", False)
+                                st.success(f"✅ Loaded: {uploaded_file.name}" + (" (OCR)" if _remote_ocr else ""))
                     except Exception as e:
                         st.error(f"Upload error: {str(e)}")
 

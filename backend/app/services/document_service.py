@@ -84,6 +84,24 @@ class DocumentService:
 
         return ext_with_dot
 
+    @staticmethod
+    def validate_content_signature(file_bytes: bytes, ext: str) -> None:
+        """
+        Validate file content using magic byte signatures before attempting full extraction.
+        Prevents mislabeled files (e.g. .txt renamed to .pdf) from failing deep in parsers.
+        """
+        signatures = {
+            ".pdf": (b"%PDF-",),
+            ".docx": (b"PK",),
+            ".jpg": (b"\xff\xd8\xff",),
+            ".jpeg": (b"\xff\xd8\xff",),
+            ".png": (b"\x89PNG",),
+        }
+        expected = signatures.get(ext)
+        if expected:
+            if not any(file_bytes.startswith(sig) for sig in expected):
+                raise ValueError(f"This file doesn't appear to be a valid {ext} file.")
+
     @classmethod
     def is_ocr_path(cls, filename: str) -> bool:
         """Return True if this file will be processed via OCR (for UI messaging)."""
@@ -107,6 +125,7 @@ class DocumentService:
           .jpg/.jpeg/.png   → pytesseract OCR directly on the image
         """
         ext = cls.validate_file(filename, len(file_bytes))
+        cls.validate_content_signature(file_bytes, ext)
 
         if ext == ".txt":
             return cls._extract_txt(file_bytes)

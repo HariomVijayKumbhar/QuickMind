@@ -88,10 +88,11 @@ QuickMind/
 │   │   │   ├── summarize.py      # POST /api/summarize
 │   │   │   ├── ask.py            # POST /api/ask
 │   │   │   ├── generate.py       # POST /api/generate
-│   │   │   └── analyze.py        # POST /api/analyze
+│   │   │   ├── analyze.py        # POST /api/analyze
+│   │   │   └── document_extract.py # POST /api/document/extract (Text-only)
 │   │   ├── services/
-│   │   │   ├── ai_service.py     # Gemini API integration & prompt engineering
-│   │   │   └── document_service.py # PDF/DOCX/TXT text extraction & limits
+│   │   │   ├── ai_service.py     # Multi-provider AI engine & prompt engineering
+│   │   │   └── document_service.py # PDF/DOCX/TXT/Image extraction & validation
 │   │   └── tests/
 │   │       └── test_routes.py    # Route & service unit test suite
 │   ├── requirements.txt
@@ -102,6 +103,10 @@ QuickMind/
 │   ├── requirements.txt
 │   └── .streamlit/
 │       └── config.toml           # Streamlit theme customization
+├── scripts/
+│   └── dev/                      # One-off development & debugging scripts
+├── run_tests.py                  # Automated test suite runner
+├── e2e_test.py                   # End-to-end integration test runner
 ├── .gitignore
 └── README.md
 ```

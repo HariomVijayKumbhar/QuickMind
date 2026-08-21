@@ -1,4 +1,5 @@
 import sys
+import os
 import logging
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from app.routes.generate import router as generate_router
 from app.routes.analyze import router as analyze_router
 from app.routes.auth import router as auth_router
 from app.routes.history import router as history_router
+from app.routes.document_extract import router as document_extract_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("quickmind.main")
@@ -34,10 +36,18 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# CORS setup
+# CORS setup — restrict to explicit origins via ALLOWED_ORIGINS env var.
+# In production, set ALLOWED_ORIGINS to the frontend's deployed URL, e.g.:
+#   ALLOWED_ORIGINS=https://quickmind-frontend.onrender.com
+# Multiple origins are comma-separated. Defaults to localhost for local dev.
+allowed_origins = os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://localhost:8501"
+).split(",")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -50,6 +60,7 @@ app.include_router(summarize_router)
 app.include_router(ask_router)
 app.include_router(generate_router)
 app.include_router(analyze_router)
+app.include_router(document_extract_router)
 
 @app.get("/")
 async def root():
