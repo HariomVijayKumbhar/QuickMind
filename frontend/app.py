@@ -378,23 +378,34 @@ with st.sidebar:
                 )
                 with st.spinner(_spinner_msg):
                     try:
-                        if document_service:
-                            raw_text = document_service.extract_text(uploaded_file.getvalue(), uploaded_file.name)
-                            st.session_state.active_document_text = raw_text
-                            st.session_state.active_document_name = uploaded_file.name
-                            st.success(f"✅ Loaded: {uploaded_file.name}" + (" (OCR)" if _is_ocr else ""))
-                        else:
-                            # Remote path: call the dedicated extract endpoint which returns
-                            # the full raw text — NOT an AI-generated summary proxy.
-                            files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-                            resp = requests.post(f"{BACKEND_URL}/api/document/extract", files=files, headers=get_auth_headers(), timeout=60)
-                            if resp.status_code == 200 and resp.json().get("success"):
-                                data = resp.json().get("data", {})
+                        # Always call the backend API for extraction.
+                        # Running document_service locally on the frontend dyno is unreliable
+                        # because Tesseract is only installed on the backend dyno.
+                        files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type or "application/octet-stream")}
+                        resp = requests.post(
+                            f"{BACKEND_URL}/api/document/extract",
+                            files=files,
+                            headers=get_auth_headers(),
+                            timeout=120,  # scanned PDFs can take time
+                        )
+                        if resp.status_code == 200:
+                            body = resp.json()
+                            if body.get("success"):
+                                data = body.get("data", {})
                                 raw_text = data.get("text", "")
                                 st.session_state.active_document_text = raw_text
                                 st.session_state.active_document_name = uploaded_file.name
-                                _remote_ocr = data.get("is_ocr", False)
+                                _remote_ocr = data.get("is_ocr", False) or _is_ocr
                                 st.success(f"✅ Loaded: {uploaded_file.name}" + (" (OCR)" if _remote_ocr else ""))
+                            else:
+                                err_msg = body.get("error", "Unknown extraction error.")
+                                st.error(f"Extraction failed: {err_msg}")
+                        elif resp.status_code == 401:
+                            st.error("Session expired — please log out and log in again.")
+                        else:
+                            st.error(f"Backend error {resp.status_code}: {resp.text[:200]}")
+                    except requests.exceptions.Timeout:
+                        st.error("Request timed out. The document may be too large or the server is starting up. Please try again.")
                     except Exception as e:
                         st.error(f"Upload error: {str(e)}")
 

@@ -3,7 +3,7 @@ services:
   - type: web
     name: quickmind-backend
     env: python
-    buildCommand: "cd backend && pip install -r requirements.txt"
+    buildCommand: "apt-get install -y tesseract-ocr libtesseract-dev && cd backend && pip install -r requirements.txt"
     startCommand: "cd backend && python app/main.py"
     envVars:
       - key: GEMINI_API_KEY
