@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import streamlit as st
 import requests
+from streamlit.components.v1 import html as st_html
 
 # Add backend directory to sys.path for fallback imports
 BACKEND_DIR = Path(__file__).resolve().parent.parent / "backend"
@@ -236,6 +237,8 @@ if "target_tab_trigger" not in st.session_state:
     st.session_state.target_tab_trigger = None
 if "token" not in st.session_state:
     st.session_state.token = None
+if "refresh_token" not in st.session_state:
+    st.session_state.refresh_token = None
 if "user_email" not in st.session_state:
     st.session_state.user_email = None
 if "summary_result" not in st.session_state:
@@ -259,6 +262,100 @@ def get_auth_headers():
     if st.session_state.token:
         return {"Authorization": f"Bearer {st.session_state.token}"}
     return {}
+
+
+def sync_tokens_from_localstorage():
+    js_code = """
+    <script>
+    (function() {
+        const token = localStorage.getItem('qm_access_token') || '';
+        const refresh = localStorage.getItem('qm_refresh_token') || '';
+        const email = localStorage.getItem('qm_user_email') || '';
+        const expiry = localStorage.getItem('qm_token_expiry') || '';
+        window.parent.postMessage({type:'streamlit:setComponentValue', value: {token, refresh, email, expiry}}, '*');
+    })();
+    </script>
+    """
+    comp = st_html(js_code, height=0, scrolling=False)
+    if comp and isinstance(comp, dict):
+        return comp.get("token"), comp.get("refresh"), comp.get("email"), comp.get("expiry")
+    return None, None, None, None
+
+
+def store_tokens_in_localstorage(token, refresh_token, email, expiry):
+    expiry_str = expiry.isoformat() if hasattr(expiry, 'isoformat') else str(expiry)
+    js_code = f"""
+    <script>
+    (function() {{
+        localStorage.setItem('qm_access_token', '{token}');
+        localStorage.setItem('qm_refresh_token', '{refresh_token}');
+        localStorage.setItem('qm_user_email', '{email}');
+        localStorage.setItem('qm_token_expiry', '{expiry_str}');
+    }})();
+    </script>
+    """
+    st_html(js_code, height=0, scrolling=False)
+
+
+def clear_tokens_from_localstorage():
+    js_code = """
+    <script>
+    (function() {
+        localStorage.removeItem('qm_access_token');
+        localStorage.removeItem('qm_refresh_token');
+        localStorage.removeItem('qm_user_email');
+        localStorage.removeItem('qm_token_expiry');
+    })();
+    </script>
+    """
+    st_html(js_code, height=0, scrolling=False)
+
+
+def auto_refresh_token():
+    if not st.session_state.token or not st.session_state.get("refresh_token"):
+        return False
+    try:
+        import json, base64
+        payload_b64 = st.session_state.token.split('.')[1]
+        payload_b64 += '=' * (4 - len(payload_b64) % 4)
+        payload = json.loads(base64.b64decode(payload_b64).decode())
+        exp = payload.get('exp')
+        if not exp:
+            return False
+        from datetime import datetime, timezone, timedelta
+        now = datetime.now(timezone.utc).timestamp()
+        remaining = exp - now
+        if remaining < 300:
+            refresh_tok = st.session_state.refresh_token
+            resp = requests.post(f"{BACKEND_URL}/api/auth/refresh", json={"refresh_token": refresh_tok}, timeout=10)
+            if resp.status_code == 200:
+                data = resp.json()
+                st.session_state.token = data.get("token")
+                st.session_state.refresh_token = data.get("refresh_token")
+                new_exp = datetime.now(timezone.utc) + timedelta(minutes=30)
+                store_tokens_in_localstorage(data.get("token"), data.get("refresh_token"), st.session_state.user_email, new_exp)
+                return True
+            else:
+                clear_tokens_from_localstorage()
+                st.session_state.token = None
+                st.session_state.refresh_token = None
+                st.session_state.user_email = None
+                st.rerun()
+    except Exception:
+        pass
+    return False
+
+# -----------------------------------------------------------------------------
+# AUTO REFRESH TOKEN
+# -----------------------------------------------------------------------------
+if not st.session_state.token:
+    _tok, _ref, _email, _exp = sync_tokens_from_localstorage()
+    if _tok:
+        st.session_state.token = _tok or None
+        st.session_state.refresh_token = _ref or None
+        st.session_state.user_email = _email or None
+
+auto_refresh_token()
 
 # -----------------------------------------------------------------------------
 # AUTHENTICATION UI INTERCEPT
@@ -286,7 +383,11 @@ if not st.session_state.token:
                     if resp.status_code == 200:
                         data = resp.json()
                         st.session_state.token = data.get("token")
+                        st.session_state.refresh_token = data.get("refresh_token")
                         st.session_state.user_email = data.get("email")
+                        from datetime import datetime, timezone, timedelta
+                        new_exp = datetime.now(timezone.utc) + timedelta(minutes=30)
+                        store_tokens_in_localstorage(data.get("token"), data.get("refresh_token"), data.get("email"), new_exp)
                         st.rerun()
                     else:
                         err = resp.json().get("detail", "Authentication failed.") if resp.text else "Failed"
@@ -425,7 +526,14 @@ with st.sidebar:
     st.markdown("---")
     st.markdown(f"👤 **Logged in as:**\n\n`{st.session_state.user_email}`")
     if st.button("🚪 Logout", use_container_width=True):
+        try:
+            if st.session_state.get("refresh_token"):
+                requests.post(f"{BACKEND_URL}/api/auth/logout", json={"refresh_token": st.session_state.refresh_token}, timeout=5)
+        except Exception:
+            pass
+        clear_tokens_from_localstorage()
         st.session_state.token = None
+        st.session_state.refresh_token = None
         st.session_state.user_email = None
         st.rerun()
 

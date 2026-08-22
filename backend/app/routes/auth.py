@@ -1,18 +1,26 @@
 """
-Auth routes: signup, login, get current user.
+Auth routes: signup, login, refresh, logout, get current user.
 """
 import logging
-from fastapi import APIRouter, Depends, HTTPException, status
+import re
+import secrets
+from datetime import datetime, timedelta, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import User
+from app.models import User, RefreshToken
 from app.services.auth_service import (
     hash_password,
     verify_password,
     create_token,
     get_current_user,
+    validate_refresh_token,
+    revoke_refresh_token,
+    revoke_all_user_refresh_tokens,
+    create_refresh_token,
 )
 
 logger = logging.getLogger("quickmind.auth")
@@ -29,19 +37,59 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class PasswordStrengthError(Exception):
+    pass
+
+
+def validate_password_strength(password: str) -> None:
+    if len(password) < 8:
+        raise PasswordStrengthError("Password must be at least 8 characters.")
+    if not re.search(r"[A-Z]", password):
+        raise PasswordStrengthError("Password must contain at least one uppercase letter.")
+    if not re.search(r"[a-z]", password):
+        raise PasswordStrengthError("Password must contain at least one lowercase letter.")
+    if not re.search(r"\d", password):
+        raise PasswordStrengthError("Password must contain at least one number.")
+    if not re.search(r'[!@#$%^&*()_+\-=\[\]{};\'":\\|,.<>\/?~`]', password):
+        raise PasswordStrengthError("Password must contain at least one special character.")
+
+
+_login_attempts: dict[str, tuple[int, datetime]] = {}
+
+
+def _check_rate_limit(ip: str) -> None:
+    now = datetime.now(timezone.utc)
+    attempts, first_attempt = _login_attempts.get(ip, (0, now))
+    if now - first_attempt > timedelta(minutes=15):
+        _login_attempts[ip] = (1, now)
+        return
+    if attempts >= 5:
+        wait = 15 - (now - first_attempt).seconds // 60
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Too many login attempts. Try again in {wait} minutes.",
+        )
+    _login_attempts[ip] = (attempts + 1, first_attempt)
+
+
 @router.post("/signup")
-def signup(body: SignupRequest, db: Session = Depends(get_db)):
-    # Reject duplicate emails
+def signup(body: SignupRequest, request: Request, db: Session = Depends(get_db)):
+    try:
+        validate_password_strength(body.password)
+    except PasswordStrengthError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
     if db.query(User).filter(User.email == body.email).first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="An account with this email already exists.",
-        )
-
-    if len(body.password) < 6:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Password must be at least 6 characters.",
         )
 
     user = User(email=body.email, password_hash=hash_password(body.password))
@@ -49,23 +97,66 @@ def signup(body: SignupRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
 
-    token = create_token(user.id)
+    access_token = create_token(user.id)
+    refresh_token = create_refresh_token(user.id, db)
     logger.info("New user registered: id=%d", user.id)
-    return {"success": True, "token": token, "email": user.email}
+    return {
+        "success": True,
+        "token": access_token,
+        "refresh_token": refresh_token,
+        "email": user.email,
+    }
 
 
 @router.post("/login")
-def login(body: LoginRequest, db: Session = Depends(get_db)):
+def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    ip = request.client.host if request.client else "unknown"
+    _check_rate_limit(ip)
+
     user = db.query(User).filter(User.email == body.email).first()
     if not user or not verify_password(body.password, user.password_hash):
+        logger.warning("Failed login attempt for email=%s from ip=%s", body.email, ip)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password.",
         )
 
-    token = create_token(user.id)
+    access_token = create_token(user.id)
+    refresh_token = create_refresh_token(user.id, db)
+    _login_attempts.pop(ip, None)
     logger.info("User logged in: id=%d", user.id)
-    return {"success": True, "token": token, "email": user.email}
+    return {
+        "success": True,
+        "token": access_token,
+        "refresh_token": refresh_token,
+        "email": user.email,
+    }
+
+
+@router.post("/refresh")
+def refresh(body: RefreshRequest, db: Session = Depends(get_db)):
+    user = validate_refresh_token(body.refresh_token, db)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token.",
+        )
+
+    access_token = create_token(user.id)
+    new_refresh_token = create_refresh_token(user.id, db)
+    revoke_refresh_token(body.refresh_token, db)
+    return {
+        "success": True,
+        "token": access_token,
+        "refresh_token": new_refresh_token,
+        "email": user.email,
+    }
+
+
+@router.post("/logout")
+def logout(body: RefreshRequest, db: Session = Depends(get_db)):
+    revoke_refresh_token(body.refresh_token, db)
+    return {"success": True, "message": "Logged out successfully."}
 
 
 @router.get("/me")

@@ -14,6 +14,10 @@ __pycache__/
 .env
 *.env
 !.env.example
+backend/.env
+
+# Kilo agent config
+.agents/
 
 # IDE files
 .vscode/
