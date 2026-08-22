@@ -1,5 +1,6 @@
 import sys
 import os
+import logging
 from pathlib import Path
 import streamlit as st
 import requests
@@ -17,7 +18,20 @@ except ImportError:
     document_service = None
     settings = None
 
-BACKEND_URL = os.getenv("BACKEND_URL", "https://quickmind-qy0t.onrender.com")
+def get_default_backend_url():
+    """
+    Determine backend URL based on environment.
+    - If running locally (not in Docker/Render), use localhost:8000
+    - If running on Render, use the backend's public URL
+    """
+    if os.getenv("RENDER") or "STREAMLIT_SERVER_HEADLESS" in os.environ:
+        return os.getenv("BACKEND_URL_RENDER", "https://quickmind-backend.onrender.com")
+    else:
+        return "http://localhost:8000"
+
+BACKEND_URL = os.getenv("BACKEND_URL", get_default_backend_url())
+logger = logging.getLogger("quickmind.frontend")
+logger.info(f"Backend URL configured as: {BACKEND_URL}")
 
 # Page Configuration
 st.set_page_config(
@@ -379,7 +393,12 @@ if not st.session_state.token:
             else:
                 endpoint = "/api/auth/login" if auth_mode == "Login" else "/api/auth/signup"
                 try:
-                    resp = requests.post(f"{BACKEND_URL}{endpoint}", json={"email": auth_email, "password": auth_pass}, timeout=10)
+                    resp = requests.post(
+                        f"{BACKEND_URL}{endpoint}", 
+                        json={"email": auth_email, "password": auth_pass}, 
+                        timeout=10
+                    )
+                    
                     if resp.status_code == 200:
                         data = resp.json()
                         st.session_state.token = data.get("token")
@@ -387,13 +406,30 @@ if not st.session_state.token:
                         st.session_state.user_email = data.get("email")
                         from datetime import datetime, timezone, timedelta
                         new_exp = datetime.now(timezone.utc) + timedelta(minutes=30)
-                        store_tokens_in_localstorage(data.get("token"), data.get("refresh_token"), data.get("email"), new_exp)
+                        store_tokens_in_localstorage(
+                            data.get("token"), 
+                            data.get("refresh_token"), 
+                            data.get("email"), 
+                            new_exp
+                        )
+                        st.success(f"✅ Welcome, {data.get('email')}!")
                         st.rerun()
+                    elif resp.status_code == 400:
+                        err_detail = resp.json().get("detail", "Invalid input.")
+                        st.error(f"❌ {err_detail}")
+                    elif resp.status_code == 401:
+                        st.error("❌ Incorrect email or password.")
+                    elif resp.status_code == 429:
+                        st.error("⏱️ Too many login attempts. Please try again later.")
                     else:
-                        err = resp.json().get("detail", "Authentication failed.") if resp.text else "Failed"
-                        st.error(err)
+                        st.error(f"❌ Error {resp.status_code}: {resp.json().get('detail', 'Unknown error')}")
+                        
+                except requests.exceptions.ConnectionError:
+                    st.error(f"❌ Cannot connect to backend at {BACKEND_URL}. Is it running?")
+                except requests.exceptions.Timeout:
+                    st.error("❌ Backend request timed out. Try again.")
                 except Exception as e:
-                    st.error(f"Connection error: {e}")
+                    st.error(f"❌ Error: {str(e)}")
         st.markdown('</div>', unsafe_allow_html=True)
     st.stop()
 # -----------------------------------------------------------------------------

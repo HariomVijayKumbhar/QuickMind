@@ -1,14 +1,22 @@
 from typing import Optional
-from fastapi import APIRouter, Request, UploadFile, File, Form, Depends
+from fastapi import APIRouter, Request, UploadFile, File, Form, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.services.ai_service import ai_service
 from app.services.document_service import document_service
 from app.services.auth_service import get_current_user
+from app.services.rate_limit_service import api_rate_limiter
 from app.database import get_db
 from app.models import User, HistoryEntry
 
 router = APIRouter(prefix="/api", tags=["Summarize"])
+
+
+class SummarizeRequest(BaseModel):
+    text: Optional[str] = Field(None, max_length=100000)
+    length: Optional[str] = Field("short", pattern="^(short|detailed)$")
+
 
 @router.post("/summarize")
 async def summarize_endpoint(
@@ -19,6 +27,11 @@ async def summarize_endpoint(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if not api_rate_limiter.check_limit(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded. Maximum 20 requests per minute."
+        )
     try:
         content_to_summarize = ""
         summary_length = "short"

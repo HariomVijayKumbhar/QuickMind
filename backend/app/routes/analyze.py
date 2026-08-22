@@ -1,14 +1,21 @@
 from typing import Optional
-from fastapi import APIRouter, Request, UploadFile, File, Form, Depends
+from fastapi import APIRouter, Request, UploadFile, File, Form, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.services.ai_service import ai_service
 from app.services.document_service import document_service
 from app.services.auth_service import get_current_user
+from app.services.rate_limit_service import api_rate_limiter
 from app.database import get_db
 from app.models import User, HistoryEntry
 
 router = APIRouter(prefix="/api", tags=["Document Analysis"])
+
+
+class AnalyzeRequest(BaseModel):
+    text: Optional[str] = Field(None, max_length=100000)
+
 
 @router.post("/analyze")
 async def analyze_endpoint(
@@ -18,6 +25,11 @@ async def analyze_endpoint(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if not api_rate_limiter.check_limit(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded. Maximum 20 requests per minute."
+        )
     try:
         content_to_analyze = ""
 

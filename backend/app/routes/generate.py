@@ -1,13 +1,23 @@
 from typing import Optional
-from fastapi import APIRouter, Request, Form, Depends
+from fastapi import APIRouter, Request, Form, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.services.ai_service import ai_service
 from app.services.auth_service import get_current_user
+from app.services.rate_limit_service import api_rate_limiter
 from app.database import get_db
 from app.models import User, HistoryEntry
 
 router = APIRouter(prefix="/api", tags=["Content Generation"])
+
+
+class GenerateRequest(BaseModel):
+    content_type: str = Field(..., min_length=1, max_length=100)
+    topic: str = Field(..., min_length=1, max_length=500)
+    tone: Optional[str] = Field(None, max_length=100)
+    key_points: Optional[str] = Field(None, max_length=2000)
+
 
 @router.post("/generate")
 async def generate_endpoint(
@@ -19,6 +29,11 @@ async def generate_endpoint(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    if not api_rate_limiter.check_limit(current_user.id):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Rate limit exceeded. Maximum 20 requests per minute."
+        )
     try:
         c_type = "Email"
         c_topic = ""

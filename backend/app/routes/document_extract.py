@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, Depends
 from sqlalchemy.orm import Session
 
-from app.services.document_service import document_service, _MIN_NATIVE_PDF_CHARS
+from app.services.document_service import document_service
 from app.services.auth_service import get_current_user
 from app.database import get_db
 from app.models import User

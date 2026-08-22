@@ -52,7 +52,7 @@ class Settings:
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_DAYS: int = 7
 
-    DATABASE_URL: str = f"sqlite:///{BASE_DIR}/quickmind.db"
+    DATABASE_URL: str = f"sqlite:///{Path(__file__).resolve().parent.parent.parent / 'data' / 'quickmind.db'}"
 
 
 settings = Settings()

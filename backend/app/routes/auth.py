@@ -46,16 +46,8 @@ class PasswordStrengthError(Exception):
 
 
 def validate_password_strength(password: str) -> None:
-    if len(password) < 8:
-        raise PasswordStrengthError("Password must be at least 8 characters.")
-    if not re.search(r"[A-Z]", password):
-        raise PasswordStrengthError("Password must contain at least one uppercase letter.")
-    if not re.search(r"[a-z]", password):
-        raise PasswordStrengthError("Password must contain at least one lowercase letter.")
-    if not re.search(r"\d", password):
-        raise PasswordStrengthError("Password must contain at least one number.")
-    if not re.search(r'[!@#$%^&*()_+\-=\[\]{};\'":\\|,.<>\/?~`]', password):
-        raise PasswordStrengthError("Password must contain at least one special character.")
+    if len(password) < 6:
+        raise PasswordStrengthError("Password must be at least 6 characters long.")
 
 
 _login_attempts: dict[str, tuple[int, datetime]] = {}

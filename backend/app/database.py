@@ -1,13 +1,20 @@
 """
 SQLAlchemy database connection setup.
-Creates quickmind.db in the backend/ directory.
+Creates quickmind.db in a writable data/ directory.
 """
+import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, DeclarativeBase
-from app.config import settings
+from pathlib import Path
+
+# Ensure database directory exists
+DB_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+DB_DIR.mkdir(exist_ok=True)
+
+DATABASE_URL = f"sqlite:///{DB_DIR / 'quickmind.db'}"
 
 engine = create_engine(
-    settings.DATABASE_URL,
+    DATABASE_URL,
     connect_args={"check_same_thread": False},  # needed for SQLite in FastAPI
     echo=False,
 )

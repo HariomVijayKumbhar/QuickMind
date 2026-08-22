@@ -3,7 +3,7 @@ services:
   - type: web
     name: quickmind-backend
     env: python
-    buildCommand: "apt-get install -y tesseract-ocr libtesseract-dev && cd backend && pip install -r requirements.txt"
+    buildCommand: "apt-get install -y tesseract-ocr libtesseract-dev && mkdir -p data && cd backend && pip install -r requirements.txt"
     startCommand: "cd backend && python app/main.py"
     envVars:
       - key: GEMINI_API_KEY
@@ -12,6 +12,8 @@ services:
         sync: false
       - key: JWT_SECRET_KEY
         generateValue: true # Render will auto-generate a secure key for you!
+      - key: ALLOWED_ORIGINS
+        value: https://quickmind-frontend.onrender.com,http://localhost:8501
 
   # 2. Frontend Streamlit Service
   - type: web
@@ -21,4 +23,6 @@ services:
     startCommand: "cd frontend && streamlit run app.py --server.port $PORT --server.address 0.0.0.0"
     envVars:
       - key: BACKEND_URL
-        value: https://quickmind-qy0t.onrender.com
+        fromService:
+          type: web
+          name: quickmind-backend

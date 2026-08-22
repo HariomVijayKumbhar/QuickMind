@@ -1,4 +1,4 @@
-# Python virtual environments
+git show -s --decorate=full --shortstat ... aaf8cad...# Python virtual environments
 .venv/
 venv/
 ENV/
