@@ -232,11 +232,9 @@ class AIService:
         )
 
         candidate_models = [
-            "gemini-2.5-flash-lite",
             "gemini-2.5-flash",
             "gemini-1.5-flash-latest",
             "gemini-1.5-flash",
-            "gemini-1.5-flash-8b",
             "gemini-1.5-pro",
         ]
         last_err = None
