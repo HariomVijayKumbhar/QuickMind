@@ -299,8 +299,7 @@ class DocumentService:
             raw = ai_service.extract_text_from_image(file_bytes, mime_type=mime_type)
         except Exception as e:
             raise ValueError(
-                "Could not extract readable text from this file. "
-                "Please try a clearer scan or a text-based document."
+                f"Image text extraction failed: {str(e)}"
             ) from e
 
         result = cls._normalize_ocr_text(raw).strip()

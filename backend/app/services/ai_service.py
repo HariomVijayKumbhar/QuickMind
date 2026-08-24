@@ -48,12 +48,9 @@ class AIService:
         # Try models in order of capability/availability. gemini-2.5-flash requires
         # billing enabled on newer projects; 1.5-flash works broadly on free tier.
         candidate_models = [
-            "gemini-2.5-flash-lite",
             "gemini-2.5-flash",
-            "gemini-1.5-flash-latest",
-            "gemini-1.5-flash",
-            "gemini-1.5-flash-8b",
-            "gemini-1.5-pro",
+            "gemini-2.5-flash-lite",
+            "gemini-2.5-pro",
         ]
         last_err = None
         
@@ -216,7 +213,18 @@ class AIService:
                 last_err = e
                 continue
 
-        raise ValueError(f"All vision-capable AI providers failed. Details: {str(last_err)}")
+        error_msg = str(last_err) if last_err else "No vision-capable AI provider is configured."
+        if "quota" in error_msg.lower() or "RESOURCE_EXHAUSTED" in str(last_err):
+            error_msg = (
+                "AI vision quota exceeded. Please try again later, or configure an OpenAI API key "
+                "for vision fallback support."
+            )
+        elif "does not support image input" in error_msg.lower():
+            error_msg = (
+                "The selected AI model does not support image input. "
+                "Please configure an OpenAI API key for image text extraction."
+            )
+        raise ValueError(f"All vision-capable AI providers failed. Details: {error_msg}")
 
     def _call_gemini_vision(self, image_bytes: bytes, mime_type: str = "image/png") -> str:
         key = settings.GEMINI_API_KEY
@@ -232,10 +240,10 @@ class AIService:
         )
 
         candidate_models = [
-            "gemini-2.5-flash",
-            "gemini-1.5-flash-latest",
-            "gemini-1.5-flash",
-            "gemini-1.5-pro",
+            "gemini-2.5-flash-image",
+            "gemini-3.1-flash-image",
+            "gemini-3-pro-image",
+            "gemini-3.1-flash-lite-image",
         ]
         last_err = None
         for m in candidate_models:
