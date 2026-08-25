@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient
 from app.main import app
-from app.services.document_service import document_service
+from app.services.document_service import document_service, DocumentService
 from app.services.ai_service import ai_service
 
 client = TestClient(app)
@@ -179,7 +179,7 @@ startxref
         doc.close()
 
         # AI Vision should NOT be called for a text-based PDF
-        with patch.object(document_service, '_ocr_image_bytes') as mock_ocr:
+        with patch.object(DocumentService, '_ocr_image_bytes') as mock_ocr:
             result = document_service.extract_text(pdf_bytes, "text_sample.pdf")
             mock_ocr.assert_not_called()
         self.assertIn("QuickMind", result)
@@ -196,7 +196,7 @@ startxref
 
         expected_ocr_text = "Handwritten notes OCR extracted text"
         # Mock _ocr_image_bytes to simulate Tesseract returning text
-        with patch.object(document_service, '_ocr_image_bytes', return_value=expected_ocr_text) as mock_ocr:
+        with patch.object(DocumentService, '_ocr_image_bytes', return_value=expected_ocr_text) as mock_ocr:
             result = document_service.extract_text(pdf_bytes, "scanned_notes.pdf")
             mock_ocr.assert_called_once()  # OCR must be attempted for the blank page
         self.assertIn(expected_ocr_text, result)
@@ -219,7 +219,7 @@ startxref
             call_count[0] += 1
             return page_responses[idx] if idx < len(page_responses) else ""
 
-        with patch.object(document_service, '_ocr_image_bytes', side_effect=mock_ocr_side_effect):
+        with patch.object(DocumentService, '_ocr_image_bytes', side_effect=mock_ocr_side_effect):
             result = document_service.extract_text(pdf_bytes, "multipage_scan.pdf")
 
         self.assertEqual(call_count[0], 3, "OCR must be called once per blank page")
@@ -235,7 +235,7 @@ startxref
         doc.close()
 
         # Mock _ocr_image_bytes to return empty string (nothing legible)
-        with patch.object(document_service, '_ocr_image_bytes', return_value=""):
+        with patch.object(DocumentService, '_ocr_image_bytes', return_value=""):
             with self.assertRaises(ValueError) as exc:
                 document_service.extract_text(pdf_bytes, "empty_scan.pdf")
         self.assertIn("Could not extract text from this scanned PDF", str(exc.exception))

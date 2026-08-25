@@ -29,13 +29,17 @@ class Settings:
     def OPENAI_API_KEY(self) -> str:
         return self._get_env("OPENAI_API_KEY")
 
+    _cached_jwt_secret: str = ""
+
     @property
     def JWT_SECRET_KEY(self) -> str:
         key = self._get_env("JWT_SECRET_KEY")
         if not key or key == "your_secret_key_here_change_this":
             # Local fallback only. Set JWT_SECRET_KEY in Render for production
             # so tokens remain valid after a restart/redeploy.
-            return secrets.token_hex(32)
+            if not self._cached_jwt_secret:
+                self._cached_jwt_secret = secrets.token_hex(32)
+            return self._cached_jwt_secret
         return key
 
     PROVIDER_PRIORITY: list = ["gemini", "groq", "openai"]
