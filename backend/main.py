@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Depends, File, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -17,7 +17,10 @@ from schemas import (
     ApiResponse,
 )
 from ai_provider import generate
+from security import get_current_user
 from utils import limiter, get_client_ip
+from auth_routes import router as auth_router
+from file_parser import extract_text
 
 
 app = FastAPI(title="Quickmind API")
@@ -33,6 +36,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router)
+
 
 @app.get("/api/health")
 def health():
@@ -40,7 +45,11 @@ def health():
 
 
 @app.post("/api/summarize", response_model=ApiResponse)
-def summarize(req: SummarizeRequest, request: Request):
+def summarize(
+    req: SummarizeRequest,
+    request: Request,
+    user=Depends(get_current_user),
+):
     client_ip = get_client_ip(request)
     if not limiter.is_allowed(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
@@ -54,7 +63,11 @@ def summarize(req: SummarizeRequest, request: Request):
 
 
 @app.post("/api/ask", response_model=ApiResponse)
-def ask(req: AskRequest, request: Request):
+def ask(
+    req: AskRequest,
+    request: Request,
+    user=Depends(get_current_user),
+):
     client_ip = get_client_ip(request)
     if not limiter.is_allowed(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
@@ -70,7 +83,11 @@ def ask(req: AskRequest, request: Request):
 
 
 @app.post("/api/generate", response_model=ApiResponse)
-def generate_content(req: GenerateRequest, request: Request):
+def generate_content(
+    req: GenerateRequest,
+    request: Request,
+    user=Depends(get_current_user),
+):
     client_ip = get_client_ip(request)
     if not limiter.is_allowed(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
@@ -84,7 +101,11 @@ def generate_content(req: GenerateRequest, request: Request):
 
 
 @app.post("/api/analyze", response_model=ApiResponse)
-def analyze(req: AnalyzeRequest, request: Request):
+def analyze(
+    req: AnalyzeRequest,
+    request: Request,
+    user=Depends(get_current_user),
+):
     client_ip = get_client_ip(request)
     if not limiter.is_allowed(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
@@ -98,7 +119,11 @@ def analyze(req: AnalyzeRequest, request: Request):
 
 
 @app.post("/api/suggest", response_model=ApiResponse)
-def suggest(req: SuggestRequest, request: Request):
+def suggest(
+    req: SuggestRequest,
+    request: Request,
+    user=Depends(get_current_user),
+):
     client_ip = get_client_ip(request)
     if not limiter.is_allowed(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
@@ -109,6 +134,25 @@ def suggest(req: SuggestRequest, request: Request):
         return ApiResponse(success=True, data=result)
     except Exception as e:
         return ApiResponse(success=False, error=str(e))
+
+
+@app.post("/api/upload", response_model=ApiResponse)
+def upload_file(
+    request: Request,
+    file: UploadFile = File(...),
+    user=Depends(get_current_user),
+):
+    client_ip = get_client_ip(request)
+    if not limiter.is_allowed(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
+    try:
+        content = file.file.read()
+        text = extract_text(file.filename, content)
+        return ApiResponse(success=True, data=text)
+    except ValueError as e:
+        return ApiResponse(success=False, error=str(e))
+    except Exception as e:
+        return ApiResponse(success=False, error="Failed to process file.")
 
 
 @app.exception_handler(RequestValidationError)
