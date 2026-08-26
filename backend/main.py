@@ -17,6 +17,7 @@ from schemas import (
     GenerateRequest,
     AnalyzeRequest,
     SuggestRequest,
+    VisionRequest,
     ApiResponse,
 )
 from ai_provider import generate
@@ -204,6 +205,30 @@ def upload_file(
         return ApiResponse(success=False, error=str(e))
     except Exception as e:
         return ApiResponse(success=False, error="Failed to process file.")
+
+
+@app.post("/api/vision", response_model=ApiResponse)
+def analyze_image(
+    request: Request,
+    file: UploadFile = File(...),
+    user=Depends(get_current_user),
+):
+    client_ip = get_client_ip(request)
+    if not limiter.is_allowed(client_ip):
+        raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
+    try:
+        content = file.file.read()
+        mime = file.content_type or "image/png"
+        prompt = (
+            "Analyze this image in detail. Describe what you see, including text, objects, people, "
+            "charts, tables, and any other relevant information. Be thorough and specific."
+        )
+        result = generate(prompt, image_bytes=content, mime_type=mime)
+        return ApiResponse(success=True, data=result)
+    except ValueError as e:
+        return ApiResponse(success=False, error=str(e))
+    except Exception as e:
+        return ApiResponse(success=False, error="Failed to analyze image.")
 
 
 @app.exception_handler(RequestValidationError)

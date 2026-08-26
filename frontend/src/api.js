@@ -69,6 +69,23 @@ export async function uploadFile(file) {
   return data.data;
 }
 
+export async function analyzeImage(file) {
+  const url = `${API_BASE}/api/vision`;
+  const form = new FormData();
+  form.append('file', file);
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      ...getAuthHeaders(),
+    },
+    body: form,
+  });
+
+  const data = await handleResponse(response);
+  return data.data;
+}
+
 export const endpoints = {
   summarize: '/api/summarize',
   ask: '/api/ask',

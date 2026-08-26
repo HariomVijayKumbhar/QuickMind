@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { endpoints, apiCall } from '../api';
+import { endpoints, apiCall, analyzeImage } from '../api';
 import { useDocument } from '../context/DocumentContext';
 import Loader from './Loader';
 import ErrorBanner from './ErrorBanner';
@@ -10,7 +10,11 @@ export default function DocumentAnalyzer() {
   const [output, setOutput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [imageLoading, setImageLoading] = useState(false);
+  const [imageOutput, setImageOutput] = useState('');
+  const [imageError, setImageError] = useState('');
   const fileInputRef = useRef(null);
+  const imageInputRef = useRef(null);
 
   useEffect(() => {
     if (document?.text && !text) {
@@ -54,6 +58,22 @@ export default function DocumentAnalyzer() {
       });
   }
 
+  async function handleImageAnalysis(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setImageError('');
+    setImageOutput('');
+    setImageLoading(true);
+    try {
+      const result = await analyzeImage(file);
+      setImageOutput(result);
+    } catch (err) {
+      setImageError(err.message);
+    } finally {
+      setImageLoading(false);
+    }
+  }
+
   return (
     <div className="feature">
       <div className="feature-header-row">
@@ -65,19 +85,19 @@ export default function DocumentAnalyzer() {
             onClick={() => setText(document.text)}
             title="Reset to active document text"
           >
-            📋 Use "{document.name}"
+            Use "{document.name}"
           </button>
         )}
       </div>
 
       {document ? (
         <div className="tool-doc-badge">
-          <span>📄 Analyzing: <strong>{document.name}</strong> ({document.text.length.toLocaleString()} chars)</span>
-          <span className="grounding-tag">Strict Grounding: File Only</span>
+          <span>Analyzing: {document.name} ({document.text.length.toLocaleString()} chars)</span>
+          <span className="grounding-tag">Strict Evidence-Based Analysis</span>
         </div>
       ) : (
         <div className="tool-doc-badge">
-          <span>💡 Upload any PDF, DOCX, TXT, or Image to perform a complete in-depth analysis.</span>
+          <span>Upload any PDF, DOCX, TXT, or Image to perform a complete in-depth analysis.</span>
         </div>
       )}
 
@@ -106,7 +126,7 @@ export default function DocumentAnalyzer() {
             onClick={() => fileInputRef.current?.click()}
             disabled={loading || isUploading}
           >
-            {isUploading ? 'Extracting File...' : '📁 Upload Document'}
+            {isUploading ? 'Extracting File...' : 'Upload Document'}
           </button>
 
           <button type="submit" className="btn-primary" disabled={loading || isUploading}>
@@ -125,6 +145,39 @@ export default function DocumentAnalyzer() {
           <p>{output}</p>
         </div>
       )}
+
+      <div className="vision-section">
+        <h3>Image Analysis</h3>
+        <p className="vision-hint">Upload an image to get a detailed description and analysis.</p>
+        <ErrorBanner message={imageError} />
+        <div className="form-actions-row">
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept=".png,.jpg,.jpeg"
+            onChange={handleImageAnalysis}
+            hidden
+          />
+          <button
+            type="button"
+            className="btn-upload-secondary"
+            onClick={() => imageInputRef.current?.click()}
+            disabled={imageLoading || isUploading}
+          >
+            {imageLoading ? 'Analyzing Image...' : 'Choose Image'}
+          </button>
+        </div>
+        {imageLoading && <Loader />}
+        {imageOutput && (
+          <div className="output">
+            <div className="output-header">
+              <h3>Image Analysis</h3>
+              <span className="output-source-badge">Vision Analysis</span>
+            </div>
+            <p>{imageOutput}</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

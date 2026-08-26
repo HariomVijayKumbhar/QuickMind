@@ -201,6 +201,24 @@ header {
   line-height: 1.6;
 }
 
+.vision-section {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid #334155;
+}
+
+.vision-section h3 {
+  font-size: 1.1rem;
+  color: #e2e8f0;
+  margin-bottom: 0.5rem;
+}
+
+.vision-hint {
+  font-size: 0.9rem;
+  color: #94a3b8;
+  margin-bottom: 1rem;
+}
+
 .auth-page {
   display: flex;
   justify-content: center;

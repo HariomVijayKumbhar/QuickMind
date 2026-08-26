@@ -24,6 +24,10 @@ class SuggestRequest(BaseModel):
     context: str = Field(default="", max_length=30000)
 
 
+class VisionRequest(BaseModel):
+    prompt: str = Field(..., min_length=1, max_length=2000)
+
+
 class ApiResponse(BaseModel):
     success: bool
     data: str | None = None
