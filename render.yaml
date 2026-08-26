@@ -2,12 +2,13 @@ services:
   - type: web
     name: quickmind-api
     runtime: python
-    workingDirectory: backend
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.10
+      - key: PORT
+        value: 10000
       - key: AI_PROVIDER
         value: openrouter
       - key: OPENROUTER_API_KEY
