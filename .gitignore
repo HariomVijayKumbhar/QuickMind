@@ -9,6 +9,9 @@ venv/
 .venv/
 env.bak/
 venv.bak/
+*.db
+*.sqlite
+*.sqlite3
 
 # Node
 node_modules/
@@ -17,6 +20,8 @@ build/
 
 # Environment files
 .env
+.env.*
+!.env.example
 .env.local
 .env.development.local
 .env.test.local

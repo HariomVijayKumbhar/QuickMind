@@ -2,102 +2,18 @@ import os
 import time
 import httpx
 
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-AI_PROVIDER = os.getenv("AI_PROVIDER", "openai").lower()
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash")
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 TIMEOUT = 30
 MAX_RETRIES = 1
 
 
-def _call_anthropic(prompt: str, system: str) -> str:
-    if not ANTHROPIC_API_KEY:
-        raise ValueError("ANTHROPIC_API_KEY is not set")
-    url = "https://api.anthropic.com/v1/messages"
-    headers = {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-    }
-    body = {
-        "model": "claude-3-5-sonnet-20241022",
-        "max_tokens": 1024,
-        "system": system,
-        "messages": [{"role": "user", "content": prompt}],
-    }
-    for attempt in range(1 + MAX_RETRIES):
-        try:
-            with httpx.Client(timeout=TIMEOUT) as client:
-                resp = client.post(url, json=body, headers=headers)
-                resp.raise_for_status()
-                data = resp.json()
-                return data["content"][0]["text"]
-        except Exception as e:
-            if attempt == MAX_RETRIES:
-                raise RuntimeError(f"Anthropic API error: {e}") from e
-            time.sleep(1)
-
-
-def _call_openai(prompt: str, system: str) -> str:
-    if not OPENAI_API_KEY:
-        raise ValueError("OPENAI_API_KEY is not set")
-    url = "https://api.openai.com/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json",
-    }
-    messages = []
-    if system:
-        messages.append({"role": "system", "content": system})
-    messages.append({"role": "user", "content": prompt})
-    body = {
-        "model": "gpt-4o-mini",
-        "max_tokens": 1024,
-        "messages": messages,
-    }
-    for attempt in range(1 + MAX_RETRIES):
-        try:
-            with httpx.Client(timeout=TIMEOUT) as client:
-                resp = client.post(url, json=body, headers=headers)
-                resp.raise_for_status()
-                data = resp.json()
-                return data["choices"][0]["message"]["content"]
-        except Exception as e:
-            if attempt == MAX_RETRIES:
-                raise RuntimeError(f"OpenAI API error: {e}") from e
-            time.sleep(1)
-
-
-def _call_gemini(prompt: str, system: str) -> str:
-    if not GEMINI_API_KEY:
-        raise ValueError("GEMINI_API_KEY is not set")
-    url = (
-        f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
-    )
-    contents = []
-    if system:
-        contents.append({"role": "user", "parts": [{"text": system}]})
-    contents.append({"role": "user", "parts": [{"text": prompt}]})
-    body = {"contents": contents}
-    for attempt in range(1 + MAX_RETRIES):
-        try:
-            with httpx.Client(timeout=TIMEOUT) as client:
-                resp = client.post(url, json=body)
-                resp.raise_for_status()
-                data = resp.json()
-                return data["candidates"][0]["content"]["parts"][0]["text"]
-        except Exception as e:
-            if attempt == MAX_RETRIES:
-                raise RuntimeError(f"Gemini API error: {e}") from e
-            time.sleep(1)
-
-
 def _call_openrouter(prompt: str, system: str) -> str:
     if not OPENROUTER_API_KEY:
-        raise ValueError("OPENROUTER_API_KEY is not set")
-    url = "https://openrouter.ai/api/v1/chat/completions"
+        raise ValueError("OPENROUTER_API_KEY is not set. Please set it in your .env file.")
+    url = f"{OPENROUTER_BASE_URL}/chat/completions"
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
@@ -107,31 +23,54 @@ def _call_openrouter(prompt: str, system: str) -> str:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
     body = {
-        "model": "google/gemini-2.0-flash-exp:free",
-        "max_tokens": 1024,
+        "model": OPENROUTER_MODEL,
+        "max_tokens": 3000,
         "messages": messages,
     }
+    last_error = None
     for attempt in range(1 + MAX_RETRIES):
         try:
             with httpx.Client(timeout=TIMEOUT) as client:
                 resp = client.post(url, json=body, headers=headers)
+                if resp.status_code == 404:
+                    raise RuntimeError(
+                        f"Model '{OPENROUTER_MODEL}' not found on OpenRouter. "
+                        f"Please check OPENROUTER_MODEL in your .env file."
+                    )
                 resp.raise_for_status()
                 data = resp.json()
-                return data["choices"][0]["message"]["content"]
+                content = data["choices"][0]["message"]["content"]
+                if not content or not content.strip():
+                    raise RuntimeError("AI returned an empty response. Please try again.")
+                return content
         except Exception as e:
+            last_error = e
             if attempt == MAX_RETRIES:
-                raise RuntimeError(f"OpenRouter API error: {e}") from e
+                break
             time.sleep(1)
+
+    msg = str(last_error)
+    if "does not support image" in msg.lower() or "does not support" in msg.lower():
+        raise RuntimeError(
+            "The selected AI model does not support image input. "
+            "Please use a text-only model or upload a text-based file."
+        )
+    if "401" in msg or "Unauthorized" in msg:
+        raise RuntimeError(
+            "AI service authentication failed. Please check your OPENROUTER_API_KEY."
+        )
+    if "429" in msg or "rate limit" in msg.lower():
+        raise RuntimeError(
+            "AI service rate limit reached. Please wait a moment and try again."
+        )
+    if "timeout" in msg.lower() or "timed out" in msg.lower():
+        raise RuntimeError(
+            "AI service request timed out. Please try again later."
+        )
+    raise RuntimeError(f"AI service temporarily unavailable. Please try again later. ({msg})")
 
 
 def generate(prompt: str, system: str = "") -> str:
-    provider = AI_PROVIDER
-    if provider == "anthropic":
-        return _call_anthropic(prompt, system)
-    if provider == "openai":
-        return _call_openai(prompt, system)
-    if provider == "gemini":
-        return _call_gemini(prompt, system)
-    if provider == "openrouter":
-        return _call_openrouter(prompt, system)
-    raise ValueError(f"Unsupported AI_PROVIDER: {provider}. Use anthropic, openai, gemini, or openrouter.")
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise ValueError("Prompt must be a non-empty string.")
+    return _call_openrouter(prompt, system)

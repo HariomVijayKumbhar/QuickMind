@@ -1,6 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
+import os
 
 from database import get_db
 from models import User
@@ -31,7 +32,7 @@ def get_or_create_user_by_google(db: Session, google_id: str, email: str) -> Use
 
 
 @router.post("/register", response_model=TokenResponse)
-def register(req: RegisterRequest, request, db: Session = Depends(get_db)):
+def register(req: RegisterRequest, request: Request, db: Session = Depends(get_db)):
     client_ip = get_client_ip(request)
     if not auth_limiter.is_allowed(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
@@ -50,7 +51,7 @@ def register(req: RegisterRequest, request, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(req: LoginRequest, request, db: Session = Depends(get_db)):
+def login(req: LoginRequest, request: Request, db: Session = Depends(get_db)):
     client_ip = get_client_ip(request)
     if not auth_limiter.is_allowed(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")
@@ -62,7 +63,7 @@ def login(req: LoginRequest, request, db: Session = Depends(get_db)):
 
 
 @router.post("/google", response_model=TokenResponse)
-def google_auth(req: GoogleAuthRequest, request, db: Session = Depends(get_db)):
+def google_auth(req: GoogleAuthRequest, request: Request, db: Session = Depends(get_db)):
     client_ip = get_client_ip(request)
     if not auth_limiter.is_allowed(client_ip):
         raise HTTPException(status_code=429, detail="Too many requests. Please try again later.")

@@ -5,15 +5,14 @@ from typing import Optional
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+from bcrypt import hashpw, gensalt, checkpw
 from sqlalchemy.orm import Session
 
-from database import SessionLocal, engine
+from database import SessionLocal, engine, Base
 from models import User
 
 Base.metadata.create_all(bind=engine)
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 JWT_SECRET = os.getenv("JWT_SECRET", "change-me-in-production")
@@ -30,11 +29,11 @@ def get_db():
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return hashpw(password.encode(), gensalt()).decode()
 
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    return checkpw(plain.encode(), hashed.encode())
 
 
 def create_access_token(user_id: int, email: str) -> str:
