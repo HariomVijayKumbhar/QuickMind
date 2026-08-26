@@ -15,6 +15,7 @@ ALLOWED_MIME_TYPES = {
     "image/jpeg",
 }
 MAX_FILE_SIZE = 10 * 1024 * 1024
+MAX_OCR_PAGES = 15
 
 
 def _configure_tesseract() -> bool:
@@ -117,12 +118,12 @@ def _ocr_pil_image(img: Image.Image) -> str:
         # 1. Add white border padding to prevent edge text clipping by Tesseract
         img = ImageOps.expand(img, border=30, fill="white")
 
-        # 2. Upscale if image resolution is low (ensures optimal ~300 DPI for Tesseract)
+        # 2. Upscale if image resolution is low (ensures optimal ~200 DPI for Tesseract)
         w, h = img.size
         max_dim = max(w, h)
         min_dim = min(w, h)
-        if max_dim < 1800 or min_dim < 1000:
-            scale = max(2.0, 2000.0 / max_dim)
+        if max_dim < 1400 or min_dim < 900:
+            scale = max(1.5, 1600.0 / max_dim)
             img = img.resize((int(w * scale), int(h * scale)), Image.Resampling.LANCZOS)
 
         # 3. Convert to grayscale, auto-contrast, and sharpen
@@ -142,7 +143,7 @@ def _ocr_pil_image(img: Image.Image) -> str:
         # 5. Multi-pass candidate scoring across PSM modes
         candidates = []
         for variant in variants:
-            for psm in ["3", "6", "4"]:
+            for psm in ["3", "6"]:
                 try:
                     res = pytesseract.image_to_string(variant, config=f"--oem 3 --psm {psm}")
                     cleaned = _clean_extracted_text(res)
@@ -189,28 +190,27 @@ def _read_pdf(file_bytes: bytes) -> str:
 
         with pdfplumber.open(io.BytesIO(file_bytes)) as pdf:
             total_pages = len(pdf.pages)
+            ocr_page_count = 0
             for i, page in enumerate(pdf.pages):
                 direct_text = _clean_extracted_text(page.extract_text() or "")
                 has_images = bool(page.images)
 
-                # If text is sparse / empty (< 40 characters or no alphanumeric), run high-res OCR
                 alpha_count = sum(c.isalnum() for c in direct_text)
-                if alpha_count < 25 and pdf_doc is not None:
+                needs_ocr = False
+                if alpha_count < 25 and pdf_doc is not None and ocr_page_count < MAX_OCR_PAGES:
+                    needs_ocr = True
+                elif has_images and pdf_doc is not None and ocr_page_count < MAX_OCR_PAGES:
+                    needs_ocr = True
+
+                if needs_ocr:
                     try:
-                        # Render at scale=3.0 (approx 216-300 DPI) for high precision OCR
-                        pil_img = pdf_doc[i].render(scale=3.0).to_pil()
+                        pil_img = pdf_doc[i].render(scale=2.0).to_pil()
                         ocr_text = _ocr_pil_image(pil_img)
-                        if ocr_text:
-                            direct_text = f"{direct_text}\n{ocr_text}".strip() if direct_text else ocr_text
-                    except Exception:
-                        pass
-                elif has_images and pdf_doc is not None:
-                    # Page contains images/diagrams alongside text; perform OCR to extract text in figures
-                    try:
-                        pil_img = pdf_doc[i].render(scale=3.0).to_pil()
-                        ocr_text = _ocr_pil_image(pil_img)
-                        # If OCR discovered substantial additional text, augment
-                        if len(ocr_text) > len(direct_text) + 25:
+                        ocr_page_count += 1
+                        if alpha_count < 25:
+                            if ocr_text:
+                                direct_text = f"{direct_text}\n{ocr_text}".strip() if direct_text else ocr_text
+                        elif len(ocr_text) > len(direct_text) + 25:
                             direct_text = ocr_text
                     except Exception:
                         pass
@@ -225,10 +225,14 @@ def _read_pdf(file_bytes: bytes) -> str:
         # Fallback if pdfplumber fails: use pypdfium2 + high-res OCR exclusively
         if pdf_doc is not None:
             total_pages = len(pdf_doc)
+            ocr_page_count = 0
             for i in range(total_pages):
+                if ocr_page_count >= MAX_OCR_PAGES:
+                    break
                 try:
-                    pil_img = pdf_doc[i].render(scale=3.0).to_pil()
+                    pil_img = pdf_doc[i].render(scale=2.0).to_pil()
                     ocr_text = _ocr_pil_image(pil_img)
+                    ocr_page_count += 1
                     if ocr_text:
                         if total_pages > 1:
                             extracted_pages.append(f"--- Page {i + 1} ---\n{ocr_text}")
@@ -236,16 +240,19 @@ def _read_pdf(file_bytes: bytes) -> str:
                             extracted_pages.append(ocr_text)
                 except Exception:
                     pass
-
     final_text = "\n\n".join(p for p in extracted_pages if p).strip()
     if not final_text:
         # Last attempt: render all pages with pypdfium2 if not already done
         if pdf_doc is not None:
             total_pages = len(pdf_doc)
+            ocr_page_count = 0
             for i in range(total_pages):
+                if ocr_page_count >= MAX_OCR_PAGES:
+                    break
                 try:
-                    pil_img = pdf_doc[i].render(scale=3.0).to_pil()
+                    pil_img = pdf_doc[i].render(scale=2.0).to_pil()
                     ocr_text = _ocr_pil_image(pil_img)
+                    ocr_page_count += 1
                     if ocr_text:
                         if total_pages > 1:
                             extracted_pages.append(f"--- Page {i + 1} ---\n{ocr_text}")
