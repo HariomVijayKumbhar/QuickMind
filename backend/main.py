@@ -26,11 +26,15 @@ from file_parser import extract_text
 app = FastAPI(title="Quickmind API")
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173")
-CORS_ORIGINS = [FRONTEND_URL]
+cors_origins = [origin.strip().rstrip("/") for origin in FRONTEND_URL.split(",") if origin.strip()]
+for default_origin in ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]:
+    if default_origin not in cors_origins:
+        cors_origins.append(default_origin)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ORIGINS,
+    allow_origins=cors_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
