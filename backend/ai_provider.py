@@ -4,7 +4,7 @@ import time
 import httpx
 
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
-OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-exp:free")
+OPENROUTER_MODEL = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.2-11b-vision-instruct:free")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 TIMEOUT = 60
@@ -90,6 +90,16 @@ def _call_openrouter(prompt: str, system: str = "", image_bytes: bytes = None, m
                 content = data["choices"][0]["message"]["content"]
                 if not content or not content.strip():
                     raise RuntimeError("AI returned an empty response. Please try again.")
+                lowered = content.lower()
+                if image_bytes is not None and (
+                    "does not support image" in lowered
+                    or "cannot read" in lowered
+                    or "does not support" in lowered
+                ):
+                    raise RuntimeError(
+                        "The selected AI model does not support image input. "
+                        "Please switch to a vision-capable model."
+                    )
                 return content
         except RuntimeError:
             raise
