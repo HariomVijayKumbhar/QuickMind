@@ -14,7 +14,7 @@ services:
       - key: OPENROUTER_API_KEY
         sync: false
       - key: OPENROUTER_MODEL
-        value: google/gemini-2.0-flash-exp:free
+        value: meta-llama/llama-3.2-11b-vision-instruct:free
       - key: FRONTEND_URL
         value: http://localhost:5173
       - key: JWT_SECRET

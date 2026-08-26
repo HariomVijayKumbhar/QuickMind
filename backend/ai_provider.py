@@ -75,19 +75,24 @@ def _call_openrouter(prompt: str, system: str = "", image_bytes: bytes = None, m
                         f"Please check OPENROUTER_MODEL in your .env file."
                     )
                 if resp.status_code == 400 and image_bytes is not None:
-                    data = resp.json()
-                    err_msg = str(data)
-                    if "image" in err_msg.lower() or "vision" in err_msg.lower():
-                        raise RuntimeError(
-                            "The selected AI model does not support image input. "
-                            "Please switch to a vision-capable model (e.g., google/gemini-2.0-flash-exp:free, openai/gpt-4o, anthropic/claude-3.5-sonnet)."
-                        )
+                    try:
+                        data = resp.json()
+                        err_msg = str(data)
+                        if "image" in err_msg.lower() or "vision" in err_msg.lower():
+                            raise RuntimeError(
+                                "The selected AI model does not support image input. "
+                                "Please switch to a vision-capable model."
+                            )
+                    except Exception:
+                        pass
                 resp.raise_for_status()
                 data = resp.json()
                 content = data["choices"][0]["message"]["content"]
                 if not content or not content.strip():
                     raise RuntimeError("AI returned an empty response. Please try again.")
                 return content
+        except RuntimeError:
+            raise
         except Exception as e:
             last_error = e
             if attempt == MAX_RETRIES:
@@ -98,7 +103,7 @@ def _call_openrouter(prompt: str, system: str = "", image_bytes: bytes = None, m
     if "does not support image" in msg.lower() or "does not support" in msg.lower():
         raise RuntimeError(
             "The selected AI model does not support image input. "
-            "Please switch to a vision-capable model (e.g., google/gemini-2.0-flash-exp:free, openai/gpt-4o)."
+            "Please switch to a vision-capable model."
         )
     if "401" in msg or "Unauthorized" in msg:
         raise RuntimeError(

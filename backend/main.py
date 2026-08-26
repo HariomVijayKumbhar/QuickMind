@@ -223,8 +223,26 @@ def analyze_image(
             "Analyze this image in detail. Describe what you see, including text, objects, people, "
             "charts, tables, and any other relevant information. Be thorough and specific."
         )
-        result = generate(prompt, image_bytes=content, mime_type=mime)
-        return ApiResponse(success=True, data=result)
+        try:
+            result = generate(prompt, image_bytes=content, mime_type=mime)
+            return ApiResponse(success=True, data=result)
+        except RuntimeError as vision_err:
+            vision_err_msg = str(vision_err).lower()
+            if "does not support image" in vision_err_msg or "vision" in vision_err_msg:
+                ocr_text = extract_text(file.filename, content, mime=mime)
+                if not ocr_text or not ocr_text.strip():
+                    return ApiResponse(
+                        success=False,
+                        error="The selected AI model does not support image input, and no readable text could be extracted from the image. Please use a vision-capable model or upload a text-based file.",
+                    )
+                text_prompt = (
+                    "The following text was extracted from an uploaded image using OCR. "
+                    "Analyze and describe the content in detail:\n\n"
+                    f"{ocr_text}"
+                )
+                result = generate(text_prompt)
+                return ApiResponse(success=True, data=result)
+            raise vision_err
     except ValueError as e:
         return ApiResponse(success=False, error=str(e))
     except Exception as e:
