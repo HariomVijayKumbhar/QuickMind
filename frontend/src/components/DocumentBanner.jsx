@@ -9,7 +9,7 @@ export default function DocumentBanner() {
 
   function handleFileSelected(file) {
     if (!file) return;
-    uploadDocument(file).catch(() => {});
+    uploadDocument(file).catch(() => { });
   }
 
   function handleDrop(e) {
